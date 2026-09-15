@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.87.1.0] - 2026-09-15
+
+### Security
+- Upgrade the `sharp` override to 0.35.4 and `adm-zip` to 0.6.1, removing the vulnerable libheif bundle and archive extraction through destination symlinks. Adapted from @smsmatt's dependency fix in #2867, reported in #2866.
+
 ## [1.87.0.0] - 2026-09-11
 
 **`/cso` now distinguishes verified vulnerabilities from hypotheses and coverage gaps, and qualified comprehensive audits can produce replayable repair bundles without changing your working branch.**
