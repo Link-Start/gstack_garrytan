@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.87.2.0] - 2026-09-15
+
+### Fixed
+
+- Starting or stopping a headless browse daemon no longer kills another project's headed browser or removes its shared profile locks. Headed launches still clear stale profile locks, and headless cleanup still reaps Chromium children by their recorded identity. (#2817)
+
 ## [1.87.0.0] - 2026-09-11
 
 **`/cso` now distinguishes verified vulnerabilities from hypotheses and coverage gaps, and qualified comprehensive audits can produce replayable repair bundles without changing your working branch.**
