@@ -48,24 +48,43 @@ function readsFile(command: unknown, file: string, cwd: string, output: unknown,
   }
   if (quote) return false;
   parts.push(part.trim());
-  // A final Git display can hide a failed && prefix. Only the two owned reads
-  // with their exact ordered output can establish delivery through this form.
+  // A final Git display can hide a failed && prefix. Require the complete,
+  // ordered owned output; neighboring context and Git displays receive no credit.
   if (andList && semicolons && separators.at(-1) === ';' && separators.slice(0, -1).every(s => s === '&&') &&
-      /^git log --oneline [A-Za-z0-9_][A-Za-z0-9_./~^-]*$/.test(parts.at(-2) ?? '') &&
-      /^git diff [A-Za-z0-9_][A-Za-z0-9_./~^-]* --stat$/.test(parts.at(-1) ?? '')) {
+      /^git log --oneline [A-Za-z0-9_][A-Za-z0-9_./~^-]*(?: 2>\/dev\/null)?$/.test(parts.at(-2) ?? '') &&
+      /^git diff [A-Za-z0-9_][A-Za-z0-9_./~^-]* --stat(?: 2>\/dev\/null)?$/.test(parts.at(-1) ?? '')) {
     const files = [owned.source, owned.tests], readPaths: string[] = [], prefix: string[] = [];
-    for (const segment of parts.slice(0, -2)) {
+    const segments = parts.slice(0, -2);
+    let actual = outputText(output);
+    if (actual.length > 4 * 1024 * 1024) return false;
+    // A single literal Markdown context read may precede labeled owned reads.
+    // Keep its bytes outside the credited block and require both owned files.
+    const context = /^cat (.+)$/.exec(segments[0] ?? ''), contextTarget = context && literal(context[1]!);
+    if (contextTarget) {
+      const relative = path.relative(cwd, path.resolve(cwd, contextTarget));
+      if (path.isAbsolute(contextTarget) || contextTarget.startsWith('-') || !/\.md$/.test(contextTarget) ||
+          !relative || relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative) ||
+          contextTarget.split(/[\\/]/).some(part => !part || part === '.' || part === '..') ||
+          files.some(f => path.resolve(cwd, contextTarget) === f.path) ||
+          !/^echo [-=]{2,} [A-Za-z0-9_.\/-]+ [-=]{2,}$/.test(segments[1] ?? '')) return false;
+      const marker = segments[1]!.slice(5), lines = actual.replace(/\r\n?/g, '\n').split('\n');
+      const boundary = lines.indexOf(marker);
+      if (boundary <= 0 || lines.lastIndexOf(marker) !== boundary) return false;
+      actual = lines.slice(boundary).join('\n');
+      segments.shift();
+    }
+    for (const segment of segments) {
       const read = /^cat -n (.+)$/.exec(segment), target = read && literal(read[1]!);
       if (target) {
         const known = files.find(f => path.resolve(cwd, target) === f.path);
         if (!known || readPaths.includes(known.path)) return false;
         readPaths.push(known.path); prefix.push(known.content.replace(/\r\n?/g, '\n').replace(/\n$/, ''));
-      } else if (/^echo [-=]+$/.test(segment)) prefix.push(segment.slice(5));
+      } else if (/^echo (?:[-=]+|[-=]{2,} [A-Za-z0-9_.\/-]+ [-=]{2,})$/.test(segment)) prefix.push(segment.slice(5));
       else return false;
     }
-    const actual = outputText(output), expected = normalized(prefix.join('\n'));
+    const expected = normalized(prefix.join('\n'));
     const deliveredPrefix = normalized(actual.replace(/^ *\d+(?:\t|→)/gm, ''));
-    return readPaths.length === 2 && readPaths.includes(file) && actual.length <= 4 * 1024 * 1024 &&
+    return readPaths.length >= (contextTarget ? 2 : 1) && readPaths.includes(file) &&
       (deliveredPrefix === expected || deliveredPrefix.startsWith(expected + '\n'));
   }
   const cd = /^cd\s+(.+)$/.exec(parts[0] ?? '');
@@ -254,6 +273,8 @@ function treeRow(line: string): { depth: number; text: string } | undefined {
   return { depth: match[1]!.length, text: match[2]!.split(/ {3,}(?=[├└+|])/, 1)[0]! };
 }
 
+const coverageMapCaption = String.raw`[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*\.[A-Za-z0-9]+[\t ]+[—–-][\t ]+(?:test[\t ]+)?coverage[\t ]+map`;
+
 function diagramLegend(lines: string[], firstRow: number): Map<string, boolean> {
   const meanings = new Map<string, boolean>();
   const pair = String.raw`\[([✓✔✗✘])\][\t ]+(TESTED|COVERED|GAP|UNTESTED)`;
@@ -265,7 +286,7 @@ function diagramLegend(lines: string[], firstRow: number): Map<string, boolean> 
     if (index >= firstRow && (treeRow(original) || (!/\bLegend\b/i.test(original) && !bareKey.test(original)))) continue;
     // Decorative branch keys and an explicit GAP explanation do not change
     // the two coverage meanings. All other qualifiers keep the closed grammar.
-    const line = original.replace(/[\t ]+[─-]+►[\t ]+branch$/i, '')
+    const line = original.replace(/[\t ]+[─-]+►?[\t ]+branch$/i, '')
       .replace(/(\[[✓✔✗✘]\][\t ]+(?:GAP|UNTESTED))[\t ]+\((?:no test|GAP)\)$/i, '$1')
       .replace(/(\[[✓✔✗✘]\][\t ]+COVERED)[\t ]+by a test\b/gi, '$1')
       .replace(/(\[[✓✔✗✘]\][\t ]+(?:GAP|UNTESTED))[\t ]+[—–-][\t ]+no test exercises this path$/i, '$1');
@@ -275,7 +296,7 @@ function diagramLegend(lines: string[], firstRow: number): Map<string, boolean> 
     // Only a legend label or a literal file's coverage-map caption may precede
     // the pair. Arbitrary prose must not be discarded into an affirmative key.
     const prefix = line.slice(0, start).trim();
-    if (prefix && !/^(?:Legend:|[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*\.[A-Za-z0-9]+[\t ]+[—–-][\t ]+(?:test[\t ]+)?coverage[\t ]+map)$/i.test(prefix)) return new Map();
+    if (prefix && !new RegExp(String.raw`^(?:Legend:|${coverageMapCaption})$`, 'i').test(prefix)) return new Map();
     const match = legend.exec(line.slice(start).trim());
     if (!match || match[1] === match[3]) return new Map();
     const entries = [[match[1]!, /^(?:TESTED|COVERED)$/i.test(match[2]!)],
@@ -325,10 +346,12 @@ function currentDiagramLegend(lines: string[]): boolean {
 
 /** Checkbox states are meaningful only under a current key in this block. */
 function diagramCheckboxLegend(lines: string[]): Map<string, boolean> | undefined {
-  const declarations = lines.filter(line => /^\s*Legend\b/i.test(line) && /\[[x ]\]/i.test(line));
+  const heading = String.raw`(?:Legend:?|${coverageMapCaption})`;
+  const declaration = new RegExp(String.raw`^\s*(?:Legend\b|${coverageMapCaption}\b)`, 'i');
+  const declarations = lines.filter(line => declaration.test(line) && /\[[x# ]\]/i.test(line));
   if (!declarations.length) return undefined;
-  const pair = String.raw`\[([x ])\]\s+(covered(?: by an existing test)?|tested|no test(?: reaches this path)?|untested|GAP)`;
-  const form = new RegExp(String.raw`^\s*Legend:?\s+${pair}(?:\s+[|,;]?\s*|[|,;]\s*)${pair}\s*$`, 'i');
+  const pair = String.raw`\[([x# ])\]\s+(covered(?: by an existing test)?|tested|no test(?: reaches this path)?|untested|GAP)`;
+  const form = new RegExp(String.raw`^\s*${heading}\s+${pair}(?:\s+[|,;]?\s*|[|,;]\s*)${pair}\s*$`, 'i');
   const meanings = new Map<string, boolean>();
   for (const original of declarations) {
     const line = original.replace(/[\t ]+[─-] happy path[\t ]+✗ negative path$/i, '');
@@ -336,7 +359,7 @@ function diagramCheckboxLegend(lines: string[]): Map<string, boolean> | undefine
     if (!match || match[1]!.toLowerCase() === match[3]!.toLowerCase()) return new Map();
     for (const [symbol, description] of [[match[1]!, match[2]!], [match[3]!, match[4]!]]) {
       const key = symbol.toLowerCase(), covered = /^(?:covered|tested)\b/i.test(description);
-      if ((key === 'x') !== covered || (meanings.has(key) && meanings.get(key) !== covered)) return new Map();
+      if ((key === 'x' || key === '#') !== covered || (meanings.has(key) && meanings.get(key) !== covered)) return new Map();
       meanings.set(key, covered);
     }
   }
@@ -351,7 +374,7 @@ function seededDiagram(output: string): boolean {
     let owner = -1;
     for (let i = 0; i < lines.length; i++) {
       if (rows[i]) { owner = i; continue; }
-      const continuation = /^([ |│]+)(\[[✓✔✗✘xX ]\].*)$/.exec(lines[i]!);
+      const continuation = /^([ |│]+)(\[[✓✔✗✘xX# ]\].*)$/.exec(lines[i]!);
       if (owner >= 0 && continuation && [4, 6, 8].includes(continuation[1]!.length - rows[owner]!.depth))
         rows[owner]!.text += ' ' + continuation[2]!;
       else if (!/^[ |│]*$/.test(lines[i]!)) owner = -1;
@@ -359,16 +382,16 @@ function seededDiagram(output: string): boolean {
     const legend = diagramLegend(lines, rows.findIndex(row => row !== undefined));
     const wordLegend = diagramWordLegend(lines);
     const checkboxLegend = diagramCheckboxLegend(lines);
-    if (rows.some(row => row && /\[[x ]\]/i.test(row.text)) && checkboxLegend?.size !== 2) continue;
-    const marker = String.raw`(?:\[[✓✔✗✘xX ]\]|\[\s*(?:OK|GAP)\s*\])`;
-    const marked = (line: string) => /\[[✓✔✗✘xX ]\]|\[\s*OK\s*\]/i.test(line) ||
+    if (rows.some(row => row && /\[[x# ]\]/i.test(row.text)) && checkboxLegend?.size !== 2) continue;
+    const marker = String.raw`(?:\[[✓✔✗✘xX# ]\]|\[\s*(?:OK|GAP)\s*\])`;
+    const marked = (line: string) => /\[[✓✔✗✘xX# ]\]|\[\s*OK\s*\]/i.test(line) ||
       (wordLegend !== undefined && /\[\s*GAP\s*\]/i.test(line));
     const symbolMeans = (line: string, covered: boolean) => {
       if (new RegExp(String.raw`\b(?:not|never)\s+${marker}|(?:${marker}|\b(?:marker|symbol))\s+(?:is|are)\s+(?:false|incorrect|wrong)\b`, 'i').test(line)) return false;
       // A status correction [covered]→[gap] carries only its final marker.
       // Unrelated contradictory markers cannot supply both coverage states.
       const corrected = line.replace(new RegExp(marker + String.raw`[\t ]*(?:→|->)[\t ]*(?=` + marker + ')', 'gi'), '');
-      const states = [...corrected.matchAll(/\[([✓✔✗✘])\]|\[\s*(OK|GAP)\s*\]|\[([x ])\]/gi)]
+      const states = [...corrected.matchAll(/\[([✓✔✗✘])\]|\[\s*(OK|GAP)\s*\]|\[([x# ])\]/gi)]
         .map(match => match[1] ? legend.get(match[1]) : match[2] ? wordLegend?.get(match[2].toUpperCase()) : checkboxLegend?.get(match[3]!.toLowerCase()));
       return states.includes(covered) && !states.includes(!covered);
     };

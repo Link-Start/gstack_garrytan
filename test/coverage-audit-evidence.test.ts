@@ -44,6 +44,50 @@ describe('coverage audit native evidence',()=>{
       expect(verdict(s)).toEqual({ sourceRead: true, testsRead: true, diagram: true, passed: true, failures: [] });
     }
   });
+  const displayLegend = (legend: string, covered = '#', gap = ' ') => '```text\n' + legend + '\n'
+    + 'processPayment(amount, currency)\n└─ valid return success [' + covered + ']\n'
+    + 'refundPayment(paymentId, reason)\n└─ valid return refunded [' + gap + '] GAP\n```';
+  test('paid coverage diagrams accept a branch line without an arrowhead and a declared hash checkbox', () => {
+    for (const output of [
+      displayLegend('Legend:  [✓] tested    [✗] GAP (no test)    ── branch', '✓', '✗'),
+      displayLegend('src/billing.ts — coverage map           [#] tested   [ ] GAP'),
+      displayLegend('Legend: [#] tested [ ] no test'),
+      displayLegend('src/billing.ts — coverage map [x] tested [ ] GAP', 'x'),
+    ]) {
+      const s = synthetic(); s.result.output = output;
+      expect(verdict(s)).toEqual({ sourceRead: true, testsRead: true, diagram: true, passed: true, failures: [] });
+    }
+  });
+  test('hash checkbox and branch-line legends retain explicit local meanings and ownership', () => {
+    const caption = 'src/billing.ts — coverage map [#] tested [ ] GAP';
+    for (const legend of ['', '> ' + caption, '"' + caption + '"', 'Example: ' + caption,
+      'If approved: ' + caption, caption.replace('[#] tested [ ] GAP', '[#] GAP [ ] tested'),
+      caption.replace('[ ] GAP', '[ ] tested'), caption.replace('[ ] GAP', '[#] GAP'),
+      caption + ' except refunds', caption + '\nLegend: [#] untested [ ] covered',
+      caption + '\nLegend:[#] untested [ ] covered',
+      caption + '\nsrc/billing.ts — coverage map[#] untested [ ] covered',
+      caption + '\nThis legend is withdrawn.', caption + '\nThis legend applies only if approved.',
+    ]) {
+      const s = synthetic(); s.result.output = displayLegend(legend); expect(verdict(s).diagram).toBe(false);
+    }
+    const valid = displayLegend(caption);
+    for (const output of [
+      '```text\n' + caption + '\n```\n' + displayLegend(''),
+      valid.replace('processPayment', 'otherPayment'), valid.replace('refundPayment', 'otherRefund'),
+      valid.replace('return success [#]', 'return success not [#]'),
+      valid.replace('return success [#]', 'return success [#] -> [ ]'),
+      valid.replace('return refunded [ ]', 'return refunded [ ] -> [#]'),
+      valid.replace('return refunded [ ]', 'return refunded [ ] [#]'),
+      valid.replace('return success [#]', 'return success    ├─ [#]'),
+      '````markdown\n' + valid + '\n````', 'Example:\n' + valid,
+      displayLegend('Legend: [✓] tested [✗] GAP ── covered', '✓', '✗'),
+      displayLegend('Legend: [✓] tested [✗] GAP ── branch except refunds', '✓', '✗'),
+    ]) {
+      const s = synthetic(); s.result.output = output; expect(verdict(s).diagram).toBe(false);
+    }
+    const s = synthetic(); s.result.output = valid; s.result.transcript = [];
+    expect(verdict(s).diagram).toBe(true); expect(verdict(s).passed).toBe(false);
+  });
   test('CI symbol legends remain current, unambiguous and owned by their diagram', () => {
     for (const row of ciDiagrams.diagrams) {
       const text = row.text, key = text.split('\n').find(line => line.startsWith('Legend:'))!;
@@ -94,6 +138,57 @@ describe('coverage audit native evidence',()=>{
     }
     const s=synthetic();block(s,2).content=[{type:'text',text:fixture.files.source.split('\n').map((line,i)=>`${i+1}→${line}`).join('\n')}];
     expect(verdict(s).passed).toBe(true);
+  });
+  function mixedDisplay(context: boolean) {
+    const s = synthetic();
+    const command = context
+      ? 'cat review/specialists/testing.md && echo ==== SRC ==== && cat -n src/billing.ts && echo ==== TEST ==== && cat -n test/billing.test.ts && echo ==== GIT ==== && git log --oneline main..HEAD; git diff main --stat'
+      : 'cat -n test/billing.test.ts && git log --oneline main..feature/billing 2>/dev/null; git diff main...feature/billing --stat 2>/dev/null';
+    const numbered = (body: string) => body.replace(/\n$/, '').split('\n').map((line, index) => `${index + 1}\t${line}`).join('\n');
+    if (context) s.result.transcript.splice(1, 2);
+    const use = s.result.transcript.at(-2).message.content[0];
+    const result = s.result.transcript.at(-1).message.content[0];
+    Object.assign(use, {name: 'Bash', input: {command}});
+    result.content = context
+      ? '# Testing Specialist Review Checklist\n\nCoverage Gaps\n==== SRC ====\n' + numbered(s.files.source.content)
+        + '\n==== TEST ====\n' + numbered(s.files.tests.content) + '\n==== GIT ===='
+      : numbered(s.files.tests.content);
+    return {s, use, result};
+  }
+  test('mixed Git display tails retain separately delivered files and numbered reads after context', () => {
+    // Shell forms from the two failed 2026-09-20 paid /review captures.
+    for (const context of [false, true]) expect(verdict(mixedDisplay(context).s).passed).toBe(true);
+  });
+  test('mixed display reads retain ordered bodies and successful parent ownership', () => {
+    for (const context of [false, true]) for (const mutate of [
+      (x: ReturnType<typeof mixedDisplay>) => { x.result.is_error = true; },
+      (x: ReturnType<typeof mixedDisplay>) => { x.result.content = 'test/billing.test.ts was read'; },
+      (x: ReturnType<typeof mixedDisplay>) => { x.result.content = x.result.content.replace(/.*import \{ describe.*\n/, ''); },
+      (x: ReturnType<typeof mixedDisplay>) => { x.s.result.transcript.at(-1).session_id = 'foreign'; },
+      (x: ReturnType<typeof mixedDisplay>) => { x.s.result.transcript.at(-1).parent_tool_use_id = 'child'; },
+      (x: ReturnType<typeof mixedDisplay>) => { x.result.tool_use_id = 'unpaired'; },
+      (x: ReturnType<typeof mixedDisplay>) => { x.s.result.transcript.push(clone(x.s.result.transcript.at(-1))); },
+    ]) {
+      const x = mixedDisplay(context); mutate(x); expect(verdict(x.s).testsRead).toBe(false);
+    }
+    for (const context of [false, true]) for (const suffix of [
+      'git diff main --output=src/billing.ts --stat', 'git diff main --ext-diff --stat',
+      'git diff main --stat > output.txt', 'git diff main --stat || echo ok',
+    ]) {
+      const x = mixedDisplay(context); x.use.input.command = x.use.input.command.replace(/git diff[^;]+$/, suffix);
+      expect(verdict(x.s).testsRead).toBe(false);
+    }
+    for (const prefix of ['cat ../foreign.md', 'cat --help.md', 'cat /foreign.md', 'cat "$CONTEXT"', 'cat review/specialists/testing.md | head -2',
+      'false', 'python3 -c "pass"', 'echo -e "replacement"', 'cat review/specialists/testing.md; false']) {
+      const x = mixedDisplay(true); x.use.input.command = x.use.input.command.replace('cat review/specialists/testing.md', prefix);
+      expect(verdict(x.s).sourceRead).toBe(false); expect(verdict(x.s).testsRead).toBe(false);
+    }
+    const x = mixedDisplay(true); x.result.content = x.result.content.replace('==== SRC ====', '==== OTHER ====');
+    expect(verdict(x.s).sourceRead).toBe(false); expect(verdict(x.s).testsRead).toBe(false);
+    const repeated = mixedDisplay(true); repeated.result.content += '\n==== SRC ====';
+    expect(verdict(repeated.s).sourceRead).toBe(false); expect(verdict(repeated.s).testsRead).toBe(false);
+    const missing = mixedDisplay(true); missing.result.content = missing.result.content.slice(missing.result.content.indexOf('==== SRC ===='));
+    expect(verdict(missing.s).sourceRead).toBe(false); expect(verdict(missing.s).testsRead).toBe(false);
   });
   test('each exact source and test file must be successfully delivered',()=>{
     for(const mutate of [
