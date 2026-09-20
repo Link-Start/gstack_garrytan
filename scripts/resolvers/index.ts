@@ -38,6 +38,7 @@ import { generateThirdPartyActions } from './third-party-actions';
 import { generateAsideSetup, generateAsideCookbook, generateAsideResearch, generateUntrustedContentWarning, asideExecPrelude } from './aside';
 import { generateCommandReference, generateSnapshotFlags, generateBrowseSetup, generateBrowseFallback } from './browse';
 import { generateDesignDocDiscovery } from './design-doc-discovery';
+import { generateSharedLibsRubric } from './shared-libs';
 
 export const RESOLVERS: Record<string, ResolverFn> = {
   OUTSIDE_SELF_GUARD: (ctx, args) => outsideVoiceGuard({ ...ctx, host: args?.[0] === 'claude-code' ? 'codex' : 'claude' }),
@@ -58,6 +59,7 @@ export const RESOLVERS: Record<string, ResolverFn> = {
   REDACT_INVOCATION_BLOCK: generateRedactInvocationBlock,
   THIRD_PARTY_ACTIONS: generateThirdPartyActions,
   DESIGN_DOC_DISCOVERY: generateDesignDocDiscovery,
+  SHARED_LIBS_RUBRIC: generateSharedLibsRubric,
   UNTRUSTED_CONTENT_WARNING: generateUntrustedContentWarning,
   COMMAND_REFERENCE: generateCommandReference,
   SNAPSHOT_FLAGS: generateSnapshotFlags,

@@ -28,6 +28,7 @@ Invoke them by name (e.g., `/office-hours`).
 | Skill | What it does |
 |-------|-------------|
 | `/review` | Pre-landing PR review. Finds bugs that pass CI but break in prod. |
+| `/deslop-shared-libs` | Find worthwhile shared-code extractions in recent work. Recommendations only. |
 | `/codex` | Second opinion via OpenAI Codex. Review, challenge, or consult modes. Available outside the Codex harness. |
 | `/claude-code` | Second opinion via Claude Code. Review, challenge, or consult modes. Available outside the Claude Code harness. |
 | `/investigate` | Systematic root-cause debugging. No fixes without investigation. |

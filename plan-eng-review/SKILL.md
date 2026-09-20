@@ -466,7 +466,7 @@ Skills that run plan reviews (`/plan-*-review`, `/codex review`) include the EXI
 If the user asks you to compress or the system triggers context compaction: Step 0 > Test diagram > Opinionated recommendations > Everything else. Never skip Step 0 or the test diagram. Do not preemptively warn about context limits -- the system handles compaction automatically.
 
 ## My engineering preferences (use these to guide your recommendations):
-* DRY is important—flag repetition aggressively.
+* Share code when callers need the same behavior and reuse improves reliability or removes more code than it adds. Similar-looking code alone does not justify an abstraction.
 * Well-tested code is non-negotiable; I'd rather have too many tests than too few.
 * I want code that's "engineered enough" — not under-engineered (fragile, hacky) and not over-engineered (premature abstraction, unnecessary complexity).
 * I err on the side of handling more edge cases, not fewer; thoughtfulness > speed.
@@ -673,7 +673,7 @@ If none was produced (user may have cancelled), proceed with standard review.
 > Before Step 0, require resolved scope. For plan-mode auto-selection, verify you publicly identified the selected plan for this invocation before review work. If missing, send "Scope gate: plan mode — auto-selected B (reviewing <target>)." now; do not claim an earlier announcement.
 
 Before reviewing anything, answer these questions:
-1. **What existing code already partially or fully solves each sub-problem?** Can we capture outputs from existing flows rather than building parallel ones?
+1. **What existing code already partially or fully solves each sub-problem?** Inspect existing libraries, helpers, and related callers before proposing new shared code. Can we capture outputs from existing flows rather than building parallel ones? Identify authored source locations; label proposed callers with their motivating plan requirement and assumptions. Check behavior and dependency/deployment boundaries, not just matching syntax.
 2. **What is the minimum set of changes that achieves the stated goal?** Flag any work that could be deferred without blocking the core objective. Be ruthless about scope creep.
 3. **Complexity check:** If the plan touches 8+ files or introduces 2+ new classes/services, treat that as a smell and challenge whether the same goal can be achieved with fewer moving parts.
 4. **Search check:** For each architectural pattern, infrastructure component, or concurrency approach the plan introduces, research through Aside (Web research runs in Aside, above), one read-only request per pattern:

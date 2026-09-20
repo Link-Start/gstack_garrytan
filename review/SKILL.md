@@ -681,7 +681,7 @@ SQL & Data Safety, Race Conditions & Concurrency, LLM Output Trust Boundary, She
 
 Also apply the remaining INFORMATIONAL categories that are still in the checklist (Async/Sync Mixing, Column/Field Name Safety, LLM Prompt Issues, Type Coercion, View/Frontend, Time Window Safety, Completeness Gaps, Distribution & CI/CD).
 
-**Enum & Value Completeness requires reading code OUTSIDE the diff.** When the diff introduces a new enum value, status, tier, or type constant, use Grep to find all files that reference sibling values, then Read those files to check if the new value is handled. This is the one category where within-diff review is insufficient.
+**Enum & Value Completeness requires reading code OUTSIDE the diff.** When the diff introduces a new enum value, status, tier, or type constant, use Grep to find all files that reference sibling values, then Read those files to check if the new value is handled. Shared-code analysis also requires reading related callers outside the diff; keep findings anchored to changed code.
 
 **Search-before-recommending:** When recommending a fix pattern (especially for concurrency, caching, auth, or framework-specific behavior), research through Aside (Web research runs in Aside, above):
 - Verify the pattern is current best practice for the framework version in use
@@ -696,6 +696,52 @@ _aside_exec "Search the web for {framework} {version} {pattern} current best pra
 Takes seconds, prevents recommending outdated patterns. If the Aside check did not print `READY`, use the WebSearch tool when the host provides it; with neither, note it and proceed with in-distribution knowledge.
 
 Follow the output format specified in the checklist. Respect the suppressions — do NOT flag items listed in the "DO NOT flag" section.
+
+### Shared-code opportunities (core pass)
+
+Run this check on every diff, including fewer than 50 changed lines and hosts without Review Army. Review the changed code and related unchanged callers using the shared rubric below. Do not run the standalone history/PR sweep or impose candidate quotas. At least one verified authored location must be changed in this diff, and at least two actual authored source locations must need the shared behavior; added or uncommitted source qualifies, invented future callers do not. Trace generated copies to their authored templates/resolvers and exclude generated and third-party copies from evidence and savings.
+
+### Shared-code evaluation rubric
+
+- **Prove the callers.** Require at least two verified, first-party authored source
+  locations, with functions and lines. Actual added or uncommitted source qualifies.
+  Only an engineering-plan review may use proposed callers; label those assumptions
+  and distinguish them from existing source. Similar names or formatting alone do
+  not establish equivalent behavior. Generated and third-party copies cannot qualify
+  as callers or contribute savings. Follow generated copies back to authored
+  templates/resolvers. Existing dependencies remain valid reuse targets.
+- **Reuse before extracting.** Inspect existing libraries and helpers first. Compare
+  behavior, inputs, outputs, error handling, side effects, security requirements,
+  dependencies, and deployment/runtime boundaries. Preserve differences callers need;
+  do not bridge languages or isolated deployments without a practical shared contract.
+- **Keep the helper small.** Name its destination and contract, the callers to migrate,
+  and the smallest adoption sequence. Avoid option-heavy helpers and coupling unrelated
+  components. Point to existing tests or established use, specify shared-contract and
+  caller-integration coverage, and describe the blast radius of a shared failure.
+- **Account for the whole change.** Name removed blocks and their replacements. Show
+  estimated implementation lines removed, added, and saved separately from total lines
+  removed, added, and saved including tests and integration. Savings = removed - added.
+  Count moved code on both sides, exclude generated/vendor lines, use ranges when
+  uncertain, and do not count overlapping removals twice across opportunities. State
+  when tests or integration may make the total change grow.
+- **Rank useful changes.** Favor reliability gains and total net savings, then low
+  adoption and testing risk. Prefer proven code used by several callers. Use recent
+  activity to break ties between comparable benefits, not as evidence by itself.
+  Explain choices centered on older code. Reject similarities with incompatible
+  contracts and opportunities whose benefits do not justify the abstraction.
+
+The core pass owns optional extraction advice. Present only worthwhile, supported proposals; zero is valid. For each proposal, show the changed anchor and other verified callers, smallest helper/destination, preserved differences, compatibility tests, shared-failure risk, and estimated implementation and total removed/added/saved lines from named blocks. Use `"category":"shared-libs","severity":"INFORMATIONAL","advisory":true`, retain `evidence_paths` (all authored supporting paths) and `helper_target:{"path":"...","symbol":"..."}`. When reusing an existing helper, include its authored path in `evidence_paths` so its contract and raw bytes participate in revalidation; a not-yet-created helper belongs only in `helper_target`. Deduplicate equivalent proposals and overlapping savings. Existing-helper reuse is preferable when compatible.
+
+**Identity before merge or suppression:** Compute the structural fingerprint through the installed `sharedLibsFingerprint` helper, never write model-generated hash text. Feed the finding as literal JSON on stdin (replace the example values; keep the quoted delimiter), not interpolated shell code:
+
+```bash
+GSTACK_SHARED_LIB=~/.claude/skills/gstack/lib/review-evidence.ts
+bun -e 'const { sharedLibsFingerprint } = await import(process.argv[1]); const value = sharedLibsFingerprint(JSON.parse(await Bun.stdin.text())); if (!value) process.exit(1); console.log(value);' "$GSTACK_SHARED_LIB" <<'GSTACK_SHARED_LIBS_JSON'
+{"evidence_paths":["src/caller-a.ts","src/caller-b.ts"],"helper_target":{"path":"src/shared.ts","symbol":"sharedHelper"}}
+GSTACK_SHARED_LIBS_JSON
+```
+
+Use the returned fingerprint; malformed/missing metadata has no reusable identity and must be revalidated. A real defect in the same code remains a normal defect with its own evidence and Fix-First handling. An optional extraction must never suppress, downgrade, or replace that defect, even if they share a supplied fingerprint or an extraction was previously skipped.
 
 ## Confidence Calibration
 
@@ -770,7 +816,13 @@ higher confidence.
 
 **Every finding gets action — not just critical ones.**
 
+**Keep decisions through fix cycles.** Maintain an in-memory action list for this invocation, initialized once and retained when Steps 3–5.7 repeat. Keep defects and advisories separate; for shared-code advice retain the helper-computed fingerprint, `advisory`, `evidence_paths`, and `helper_target` from the actual decision. Record completed AUTO-FIX/fix actions and explicit Skip choices as they happen. A later zero-edit pass may no longer find an approved extraction because it succeeded; that must not erase its `fixed` action or original identity metadata.
+
+On each repeat pass, re-read all supporting callers and the helper destination before carrying an advisory decision forward. An unrelated auto-fix does not require asking the same question again when the structural identity, proposed contract, and tradeoffs remain unchanged. Compare actual raw source with the evidence read for the decision, including secondary callers and any transformed or indirect paths; changed evidence requires fresh evaluation. If the proposal, behavior, migration, or risk has materially changed, ask a new question instead of inheriting the choice. This invocation-local decision tracking is not cross-review suppression and must never hide a new or recurring defect.
+
 ### Step 5.0: Cross-review finding dedup
+
+**Validate advisory severity first.** If a current finding has `"severity":"CRITICAL"` and `"advisory":true`, remove `advisory` and retain its `CRITICAL` severity. Handle it as a normal defect before suppression, classification, counting, scoring, and persistence. Never downgrade severity to make advisory metadata consistent. Valid INFORMATIONAL advisories remain advisory in every category, including simplification. A prior saved finding with contradictory CRITICAL/advisory metadata cannot establish a skipped defect or advisory decision: exclude it from reuse and revalidate the current finding.
 
 Before classifying findings, check if any were previously skipped by the user in a prior review on this branch.
 
@@ -780,7 +832,12 @@ Before classifying findings, check if any were previously skipped by the user in
 
 Parse the output: only lines BEFORE `---CONFIG---` are JSONL entries (the output also contains `---CONFIG---` and `---HEAD---` footer sections that are not JSONL — ignore those).
 
-For each JSONL entry that has a `findings` array:
+**Shared-code advisory decisions use the stricter rule below.** Do not send a
+finding through the ordinary primary-file rule if its category is `shared-libs`,
+its fingerprint starts `shared-libs:`, or it has `evidence_paths` / `helper_target`.
+Missing legacy metadata requires revalidation, not fallback to a line fingerprint.
+
+For each JSONL entry that has a `findings` array, for ordinary findings only:
 1. Collect all fingerprints where `action: "skipped"`
 2. Note the `commit` field from that entry
 
@@ -793,8 +850,73 @@ git diff --name-only <prior-review-commit> HEAD
 For each current finding (from both Step 4 critical pass and Step 4.5-4.6 specialists), check:
 - Does its fingerprint match a previously skipped finding?
 - Is the finding's file path NOT in the changed-files set?
+- Is it the same advisory/defect kind? Never use a skipped advisory to suppress a real defect, including a defect with a colliding supplied fingerprint.
 
-If both conditions are true: suppress the finding. It was intentionally skipped and the relevant code hasn't changed.
+If all conditions are true: suppress the finding. It was intentionally skipped and the relevant code hasn't changed.
+
+**Reuse a skipped shared-code advisory only with complete structural evidence:**
+
+1. Recompute both structural identities with `sharedLibsFingerprint` from
+   `~/.claude/skills/gstack/lib/review-evidence.ts` before deduplication. Both must
+   be valid, both findings must explicitly be advisory, the prior saved hash must
+   match its recomputation, and the prior action must explicitly be `skipped`.
+   Retain `evidence_paths` and `helper_target`; line numbers and a primary path
+   alone cannot identify an extraction.
+2. Require a prior completed, converged `review` record with a verified binding:
+   its start/end/record working-tree fingerprints must all match the current
+   `---WTREE---` value. Read the current REVIEW_START capture without consuming
+   it; require its repo, raw branch, and working-tree fingerprint to match the
+   current repository, branch, and snapshot. If the token or any field is missing,
+   changed, or unknown, revalidate. Do not mint a new token to enable suppression.
+3. Require the prior trusted `review_binding.branch_id` to match SHA-256 of
+   the exact current raw branch, which must match that captured branch. Compute
+   this digest in code, never from model-generated hash text. Sanitized log
+   filenames are not branch identity: `topic/a` and `topic-a` can collide.
+4. Positively verify EVERY evidence path is covered by that snapshot. Start with
+   tracked/non-ignored untracked enumeration, then inspect the actual file and
+   every path component using raw reads/lstat. A plain `ls-files` list is not
+   sufficient. Revalidate symlink targets/ancestors, submodules, ignored or outside
+   files, and missing or unreadable paths; their contents are not covered by the
+   parent tree fingerprint. Check effective Git attributes and configuration
+   without executing conversion: filter, working-tree-encoding, ident, text/eol,
+   and core.autocrlf can make different raw source produce the same Git tree.
+   Any active/unknown transformation requires fresh raw-source review, even when
+   the filtered tree hash is unchanged. Disable fsmonitor and optional locks for
+   these eligibility reads. Exclude assume-unchanged, skip-worktree and sparse
+   index entries. Compare every raw evidence file byte-for-byte with its blob in
+   that exact current working-tree snapshot, using Git object reads without
+   external diff/textconv or normalization. A missing blob, mismatch or unknown
+   coverage requires revalidation. Only verified regular, untransformed,
+   in-repository source paths enter `covered_paths`.
+   Require the prior finding's saved `snapshot_covered_paths` to cover every
+   evidence path too: current eligibility cannot establish what a prior filter
+   or index flag hid. Missing prior coverage is legacy metadata; revalidate it.
+5. Use the pure `canReuseSharedLibsAdvisory` helper for the final decision.
+   Supply the actually read records and positively verified snapshot fields as
+   literal JSON on stdin. The command below computes the live branch digest
+   itself; replace the empty example objects, keeping the quoted delimiter:
+
+```bash
+bun -e '
+const { createHash } = await import("node:crypto");
+const { canReuseSharedLibsAdvisory } = await import(process.argv[1]);
+const input = JSON.parse(await Bun.stdin.text());
+let branch = Bun.spawnSync(["git", "symbolic-ref", "--quiet", "--short", "HEAD"]);
+if (branch.exitCode !== 0) branch = Bun.spawnSync(["git", "rev-parse", "HEAD"]);
+if (branch.exitCode !== 0) { console.log(false); process.exit(0); }
+const rawBranch = branch.stdout.toString().replace(/\r?\n$/, "");
+const snapshot = { ...input.currentSnapshot, branch_id: createHash("sha256").update(rawBranch, "utf8").digest("hex") };
+console.log(canReuseSharedLibsAdvisory(input.priorFinding, input.currentFinding, input.priorReview, snapshot));
+' "$HOME/.claude/skills/gstack/lib/review-evidence.ts" <<'GSTACK_SHARED_LIBS_REUSE_JSON'
+{"priorFinding":{},"currentFinding":{},"priorReview":{},"currentSnapshot":{"wtree":"","covered_paths":[]}}
+GSTACK_SHARED_LIBS_REUSE_JSON
+```
+
+Suppress only when ALL eligibility checks passed and the helper returns true.
+Otherwise re-read all supporting callers and present any still-supported advice
+for a fresh decision. A changed secondary caller or changed raw bytes matter even
+when the primary anchor, commit, or normalized Git tree appears unchanged. A real
+defect always retains normal Fix-First handling independently of this advice.
 
 Print: "Suppressed N findings from prior reviews (previously skipped by user)"
 
@@ -802,13 +924,20 @@ Print: "Suppressed N findings from prior reviews (previously skipped by user)"
 
 If no prior reviews exist or none have a `findings` array, skip this step silently.
 
-Output a summary header: `Pre-Landing Review: N issues (X critical, Y informational)`
+Output a summary header: `Pre-Landing Review: N issues (X critical, Y informational)`.
+Count only non-advisory defects in that header; list optional advice separately
+with `[ADVISORY]`. Preserve advisory records and explicit decisions for
+persistence, but exclude advisories from score penalties, unresolved-defect
+totals, and clean-status blockers. This does not relax completion, convergence,
+or missing-reviewer rules.
 
 ### Step 5a: Classify each finding
 
 For each finding, classify as AUTO-FIX or ASK per the Fix-First Heuristic in
 checklist.md. Critical findings lean toward ASK; informational findings lean
 toward AUTO-FIX.
+
+**Advisory override:** After the severity validation above, every remaining finding with `advisory:true`, including core shared-code advice, is ASK-only even when mechanical. Never auto-apply an optional extraction. Label it `[ADVISORY]`, show the helper, caller migration, tests, and estimated total savings, and let the user approve or skip it. Advisories are excluded from defect counts, score penalties, unresolved-defect totals, and clean-status blockers. A real defect still follows ordinary Fix-First independently of advice touching the same code.
 
 **Test stub override:** Any finding that has a `test_stub` field (generated by a specialist)
 is reclassified as ASK regardless of its original classification. When presenting the ASK
@@ -822,12 +951,13 @@ already exists, append the new test. Output: `[FIXED + TEST] [file:line] Problem
 
 Apply each fix directly. For each one, output a one-line summary:
 `[AUTO-FIXED] [file:line] Problem → what you did`
+Retain the completed action in the invocation action list before starting any re-review.
 
 ### Step 5c: Batch-ask about ASK items
 
 If there are ASK items remaining, present them in ONE AskUserQuestion:
 
-- List each item with a number, the severity label, the problem, and a recommended fix
+- List each item with a number, the severity label (or `[ADVISORY]` for optional advice), the problem, and a recommended fix
 - For each item, provide options: A) Fix as recommended, B) Skip
 - Include an overall RECOMMENDATION
 
@@ -847,10 +977,12 @@ RECOMMENDATION: Fix both — #1 is a real race condition, #2 prevents silent dat
 ```
 
 If 3 or fewer ASK items, you may use individual AskUserQuestion calls instead of batching.
+Retain each explicit Skip choice and its finding metadata in the invocation action list. Do not record an unanswered question as skipped or ask again about a decision already revalidated in this invocation.
 
 ### Step 5d: Apply user-approved fixes
 
 Apply fixes for items where the user chose "Fix." Output what was fixed.
+After applying the approved fix, retain its `fixed` action and the original finding metadata in the invocation action list, even if the changed blocks or helper callers are subsequently removed. Approval alone is not a completed fix.
 
 If no ASK items exist (everything was AUTO-FIX), skip the question entirely.
 
@@ -936,10 +1068,10 @@ Run:
 
 Substitute:
 - `TIMESTAMP` = ISO 8601 datetime
-- `STATUS` = `"clean"` if there are no remaining unresolved findings after Fix-First handling and adversarial review, otherwise `"issues_found"`
-- `issues_found` = total remaining unresolved findings
-- `critical` = remaining unresolved critical findings
-- `informational` = remaining unresolved informational findings
+- `STATUS` = `"clean"` if there are no remaining unresolved non-advisory defects after Fix-First handling and adversarial review, otherwise `"issues_found"`. Unapproved or skipped advisories never block clean status; incomplete or nonconverged coverage remains governed by the completion rules.
+- `issues_found` = total remaining unresolved non-advisory defects
+- `critical` = remaining unresolved non-advisory critical defects
+- `informational` = remaining unresolved non-advisory informational defects
 - `quality_score` = the PR Quality Score computed in Step 4.6 (e.g., 7.5). If specialists were skipped (small diff), use `10.0`
 - `COMMIT` = output of `git rev-parse --short HEAD`
 
@@ -976,4 +1108,5 @@ If the review exits early before a real review completes (for example, no diff a
 - **Fix-first, not read-only.** AUTO-FIX items are applied directly. ASK items are only applied after user approval. Never commit, push, or create PRs — that's /ship's job.
 - **Be terse.** One line problem, one line fix. No preamble.
 - **Only flag real problems.** Skip anything that's fine.
+- **Optional extractions stay advisory.** Shared-code opportunities need verified callers and useful reliability or total savings; similarity alone is not a defect. Keep actual defects independently actionable.
 - **Use Greptile reply templates from greptile-triage.md.** Every reply includes evidence. Never post vague replies.

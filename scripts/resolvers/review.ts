@@ -1254,6 +1254,8 @@ export function generateCrossReviewDedup(ctx: TemplateContext): string {
 
   return `### Step ${stepNum}: Cross-review finding dedup
 
+**Validate advisory severity first.** If a current finding has \`"severity":"CRITICAL"\` and \`"advisory":true\`, remove \`advisory\` and retain its \`CRITICAL\` severity. Handle it as a normal defect before suppression, classification, counting, scoring, and persistence. Never downgrade severity to make advisory metadata consistent. Valid INFORMATIONAL advisories remain advisory in every category, including simplification. A prior saved finding with contradictory CRITICAL/advisory metadata cannot establish a skipped defect or advisory decision: exclude it from reuse and revalidate the current finding.
+
 Before classifying findings, check if any were previously skipped by the user in a prior review on this branch.
 
 \`\`\`bash
@@ -1262,7 +1264,12 @@ Before classifying findings, check if any were previously skipped by the user in
 
 Parse the output: only lines BEFORE \`---CONFIG---\` are JSONL entries (the output also contains \`---CONFIG---\` and \`---HEAD---\` footer sections that are not JSONL — ignore those).
 
-For each JSONL entry that has a \`findings\` array:
+**Shared-code advisory decisions use the stricter rule below.** Do not send a
+finding through the ordinary primary-file rule if its category is \`shared-libs\`,
+its fingerprint starts \`shared-libs:\`, or it has \`evidence_paths\` / \`helper_target\`.
+Missing legacy metadata requires revalidation, not fallback to a line fingerprint.
+
+For each JSONL entry that has a \`findings\` array, for ordinary findings only:
 1. Collect all fingerprints where \`action: "skipped"\`
 2. Note the \`commit\` field from that entry
 
@@ -1275,8 +1282,73 @@ git diff --name-only <prior-review-commit> HEAD
 For each current finding (from both ${findingsRef}), check:
 - Does its fingerprint match a previously skipped finding?
 - Is the finding's file path NOT in the changed-files set?
+- Is it the same advisory/defect kind? Never use a skipped advisory to suppress a real defect, including a defect with a colliding supplied fingerprint.
 
-If both conditions are true: suppress the finding. It was intentionally skipped and the relevant code hasn't changed.
+If all conditions are true: suppress the finding. It was intentionally skipped and the relevant code hasn't changed.
+
+**Reuse a skipped shared-code advisory only with complete structural evidence:**
+
+1. Recompute both structural identities with \`sharedLibsFingerprint\` from
+   \`${ctx.paths.skillRoot}/lib/review-evidence.ts\` before deduplication. Both must
+   be valid, both findings must explicitly be advisory, the prior saved hash must
+   match its recomputation, and the prior action must explicitly be \`skipped\`.
+   Retain \`evidence_paths\` and \`helper_target\`; line numbers and a primary path
+   alone cannot identify an extraction.
+2. Require a prior completed, converged \`review\` record with a verified binding:
+   its start/end/record working-tree fingerprints must all match the current
+   \`---WTREE---\` value. Read the current REVIEW_START capture without consuming
+   it; require its repo, raw branch, and working-tree fingerprint to match the
+   current repository, branch, and snapshot. If the token or any field is missing,
+   changed, or unknown, revalidate. Do not mint a new token to enable suppression.
+3. Require the prior trusted \`review_binding.branch_id\` to match SHA-256 of
+   the exact current raw branch, which must match that captured branch. Compute
+   this digest in code, never from model-generated hash text. Sanitized log
+   filenames are not branch identity: \`topic/a\` and \`topic-a\` can collide.
+4. Positively verify EVERY evidence path is covered by that snapshot. Start with
+   tracked/non-ignored untracked enumeration, then inspect the actual file and
+   every path component using raw reads/lstat. A plain \`ls-files\` list is not
+   sufficient. Revalidate symlink targets/ancestors, submodules, ignored or outside
+   files, and missing or unreadable paths; their contents are not covered by the
+   parent tree fingerprint. Check effective Git attributes and configuration
+   without executing conversion: filter, working-tree-encoding, ident, text/eol,
+   and core.autocrlf can make different raw source produce the same Git tree.
+   Any active/unknown transformation requires fresh raw-source review, even when
+   the filtered tree hash is unchanged. Disable fsmonitor and optional locks for
+   these eligibility reads. Exclude assume-unchanged, skip-worktree and sparse
+   index entries. Compare every raw evidence file byte-for-byte with its blob in
+   that exact current working-tree snapshot, using Git object reads without
+   external diff/textconv or normalization. A missing blob, mismatch or unknown
+   coverage requires revalidation. Only verified regular, untransformed,
+   in-repository source paths enter \`covered_paths\`.
+   Require the prior finding's saved \`snapshot_covered_paths\` to cover every
+   evidence path too: current eligibility cannot establish what a prior filter
+   or index flag hid. Missing prior coverage is legacy metadata; revalidate it.
+5. Use the pure \`canReuseSharedLibsAdvisory\` helper for the final decision.
+   Supply the actually read records and positively verified snapshot fields as
+   literal JSON on stdin. The command below computes the live branch digest
+   itself; replace the empty example objects, keeping the quoted delimiter:
+
+\`\`\`bash
+bun -e '
+const { createHash } = await import("node:crypto");
+const { canReuseSharedLibsAdvisory } = await import(process.argv[1]);
+const input = JSON.parse(await Bun.stdin.text());
+let branch = Bun.spawnSync(["git", "symbolic-ref", "--quiet", "--short", "HEAD"]);
+if (branch.exitCode !== 0) branch = Bun.spawnSync(["git", "rev-parse", "HEAD"]);
+if (branch.exitCode !== 0) { console.log(false); process.exit(0); }
+const rawBranch = branch.stdout.toString().replace(/\\r?\\n$/, "");
+const snapshot = { ...input.currentSnapshot, branch_id: createHash("sha256").update(rawBranch, "utf8").digest("hex") };
+console.log(canReuseSharedLibsAdvisory(input.priorFinding, input.currentFinding, input.priorReview, snapshot));
+' "${toShellPath(ctx.paths.skillRoot)}/lib/review-evidence.ts" <<'GSTACK_SHARED_LIBS_REUSE_JSON'
+{"priorFinding":{},"currentFinding":{},"priorReview":{},"currentSnapshot":{"wtree":"","covered_paths":[]}}
+GSTACK_SHARED_LIBS_REUSE_JSON
+\`\`\`
+
+Suppress only when ALL eligibility checks passed and the helper returns true.
+Otherwise re-read all supporting callers and present any still-supported advice
+for a fresh decision. A changed secondary caller or changed raw bytes matter even
+when the primary anchor, commit, or normalized Git tree appears unchanged. A real
+defect always retains normal Fix-First handling independently of this advice.
 
 Print: "Suppressed N findings from prior reviews (previously skipped by user)"
 
@@ -1284,5 +1356,10 @@ Print: "Suppressed N findings from prior reviews (previously skipped by user)"
 
 If no prior reviews exist or none have a \`findings\` array, skip this step silently.
 
-Output a summary header: \`Pre-Landing Review: N issues (X critical, Y informational)\``;
+Output a summary header: \`Pre-Landing Review: N issues (X critical, Y informational)\`.
+Count only non-advisory defects in that header; list optional advice separately
+with \`[ADVISORY]\`. Preserve advisory records and explicit decisions for
+persistence, but exclude advisories from score penalties, unresolved-defect
+totals, and clean-status blockers. This does not relax completion, convergence,
+or missing-reviewer rules.`;
 }

@@ -163,7 +163,7 @@ export const CARVE_GUARDS: Record<string, CarveGuard> = {
     // wave's headline capability) grows the union to 1.195x. Deliberate:
     // the section is on-demand (loads only for Apple store targets), so
     // per-invocation cost for non-iOS ships is one manifest line.
-    maxSizeRatio: 1.28, // Harness-aware dispatch adds validated commands and per-pass provenance (~1.25x).
+    maxSizeRatio: 1.322, // Shared advisory identity/dedup + critical-severity validation: 248,065 union bytes / 187,706 baseline = 1.3216 (2026-09-17).
   },
   'plan-ceo-review': {
     skill: 'plan-ceo-review',
@@ -207,7 +207,7 @@ export const CARVE_GUARDS: Record<string, CarveGuard> = {
     // check grew every plan-review skeleton ~0.7KB. Measured values noted.
     // #2499 project-scope MCP jq in the brain-sync block grew every tier-2+
     // skeleton ~1.5KB (entry resolution emitted once per SKILL.md).
-    maxSkeletonBytes: 57_200, // Eng per-issue approval exit check, including regression-test authority; measured 57,113 bytes.
+    maxSkeletonBytes: 57_800, // Scoped reuse entry guidance; measured 57,549 bytes (2026-09-16). Shared rubric remains in the existing section.
     minUnionBytes: 99_800, // token-reduction Phases 1-2 (v1.69.x branch); measured union 110,910
     mustContain: ['Architecture', 'Code Quality', 'Test', 'Performance'],
     // Cross-cutting preamble growth (v1.57.2.0 AUQ-failure prose fallback + the
@@ -425,9 +425,10 @@ export const CARVE_GUARDS: Record<string, CarveGuard> = {
       gateAfterStop: undefined, // operational multi-STOP skill, like ship
     },
     behavioral: 'plan',
-    maxSkeletonBytes: 61_500, // + v2.0 {{ASIDE_RESEARCH}} (Aside first, WebSearch fallback); measured 60_309
+    maxSkeletonBytes: 74_600, // Shared-code identity/skip/action rules + critical-severity validation; measured 74,493 (2026-09-17).
     minUnionBytes: 89_000, // Phase 4 wave 1; measured union 93,357
     mustContain: ['confidence', 'P1', 'P2', 'Review Army', 'adversarial'],
+    maxSizeRatio: 1.18, // Shared-code feature + critical-severity validation: 128,042 union bytes / 108,523 baseline = 1.1799; preserves content floors.
   },
   codex: {
     skill: 'codex',

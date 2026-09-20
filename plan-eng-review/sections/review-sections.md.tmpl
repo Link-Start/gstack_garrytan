@@ -45,11 +45,15 @@ For each issue found in this section, call AskUserQuestion individually. One iss
 ### 2. Code quality review
 Evaluate:
 * Code organization and module structure.
-* DRY violations—be aggressive here.
+* Useful shared-code opportunities in the selected plan or diff and its related callers. Use the rubric below; do not run the standalone history/PR sweep or impose candidate quotas. A plan may cite explicitly proposed callers, labeled as assumptions and checked against existing interfaces. Actual code examples still require verified authored source.
 * Error handling patterns and missing edge cases (call these out explicitly).
 * Technical debt hotspots.
 * Areas that are over-engineered or under-engineered relative to my preferences.
 * Existing ASCII diagrams in touched files — are they still accurate after this change?
+
+{{SHARED_LIBS_RUBRIC}}
+
+For a recommended extraction, name the smallest helper and destination, the callers to migrate, existing reuse alternatives, and the named removed/replacement blocks. State estimated implementation savings and total savings including tests and integration, with ranges where uncertain. Keep necessary caller differences explicit. Carry the recommendation through the normal per-issue approval flow below; scope approval is not approval of an extraction.
 
 For each issue found in this section, call AskUserQuestion individually. One issue per call. Present options, state your recommendation, explain WHY. Do NOT batch multiple issues into one AskUserQuestion. Use the preamble's AskUserQuestion Format section. The AskUserQuestion call is a tool_use, not prose — call the tool directly.
 
@@ -58,6 +62,8 @@ For each issue found in this section, call AskUserQuestion individually. One iss
 ### 3. Test review
 
 {{TEST_COVERAGE_AUDIT_PLAN}}
+
+For any shared-code change, identify shared-contract tests for behavior, errors, side effects, and boundary cases, plus integration tests for each migrated caller and any caller-specific differences. Name coverage already exercised by established callers, coverage still missing, and the risk of a shared failure reaching more callers. Reuse meaningful existing tests; include required test and integration work in the total savings estimate. A rejected extraction does not remove the need to test a real defect in duplicated code.
 
 For LLM/prompt changes: check the "Prompt/LLM changes" file patterns listed in CLAUDE.md. If this plan touches ANY of those patterns, state which eval suites must be run, which cases should be added, and what baselines to compare against. Then use AskUserQuestion to confirm the eval scope with the user.
 
@@ -108,7 +114,7 @@ Write the narrative outputs below to the active plan file, or to the review resp
 Every plan review MUST produce a "NOT in scope" section listing work that was considered and explicitly deferred, with a one-line rationale for each item.
 
 ### "What already exists" section
-List existing code/flows that already partially solve sub-problems in this plan, and whether the plan reuses them or unnecessarily rebuilds them.
+List existing code/flows that already partially solve sub-problems in this plan, with source links and whether the plan reuses them or unnecessarily rebuilds them. For accepted shared-code recommendations, record the helper destination, actual or explicitly proposed callers, preserved differences, compatibility tests, and implementation versus total savings. Explain when retaining separate code is safer or an extraction would cause net growth. Reference the approved Code Quality/Test decisions rather than asking for the same remedy again.
 
 ### TODOS.md updates
 After all review sections are complete, present each potential TODO as its own individual AskUserQuestion. Never batch TODOs — one per question. Never silently skip this step. Follow the format in `~/.claude/skills/gstack/review/TODOS-format.md`.

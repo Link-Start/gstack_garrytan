@@ -1941,7 +1941,7 @@ Based on the scope signals above, select which specialists to dispatch.
 1. **Testing** — read `$GSTACK_ROOT/review/specialists/testing.md`
 2. **Maintainability** — read `$GSTACK_ROOT/review/specialists/maintainability.md`
 
-**If DIFF_LINES < 50:** Skip all specialists. Print: "Small diff ($DIFF_LINES lines) — specialists skipped." Continue to the Fix-First flow (item 4).
+**If DIFF_LINES < 50:** Skip all specialists. Print: "Small diff ($DIFF_LINES lines) — specialists skipped." Continue to the Fix-First flow (item 4). This threshold only gates specialist dispatch; any core shared-code check still runs.
 
 **Conditional (dispatch if the matching scope signal is true):**
 3. **Security** — if SCOPE_AUTH=true, OR if SCOPE_BACKEND=true AND DIFF_LINES > 100. Read `$GSTACK_ROOT/review/specialists/security.md`
@@ -1995,7 +1995,9 @@ For each finding, output a JSON object on its own line:
 {\"severity\":\"CRITICAL|INFORMATIONAL\",\"confidence\":N,\"path\":\"file\",\"line\":N,\"category\":\"category\",\"summary\":\"description\",\"fix\":\"recommended fix\",\"fingerprint\":\"path:line:category\",\"specialist\":\"name\"}
 
 Required fields: severity, confidence, path, category, summary, specialist.
-Optional: line, fix, fingerprint, evidence, test_stub.
+Optional: line, fix, fingerprint, evidence, test_stub, advisory, evidence_paths, helper_target.
+
+Optional extraction advice belongs to the core shared-code check; do not duplicate its proposals. Report real defects in duplicated code independently. Preserve advisory metadata when returning structural advice, and never label a demonstrated defect advisory merely because sharing a helper could fix it.
 
 If you can write a test that would catch this issue, include it in the `test_stub` field.
 Use the detected test framework ({TEST_FW}). Write a minimal skeleton — describe/it/test
@@ -2027,12 +2029,17 @@ For each specialist's output:
 2. Otherwise, parse each line as a JSON object. Skip lines that are not valid JSON.
 3. Collect all parsed findings into a single list, tagged with their specialist name.
 
+**Validate advisory severity first.** If a current finding has `"severity":"CRITICAL"` and `"advisory":true`, remove `advisory` and retain its `CRITICAL` severity. Handle it as a normal defect before fingerprinting, partitioning, deduplication, counting, scoring, and Fix-First. Never downgrade severity to make advisory metadata consistent. Valid INFORMATIONAL advisories remain advisory in every category, including simplification. Apply this validation to core and specialist findings alike before combining them.
+
 **Fingerprint and deduplicate:**
 For each finding, compute its fingerprint:
+- For a shared-code advisory (category `shared-libs` or a `shared-libs:` fingerprint), call the installed `sharedLibsFingerprint` helper from `$GSTACK_ROOT/lib/review-evidence.ts` with literal JSON on stdin, as in the core pass. Recompute from `evidence_paths` and `helper_target`; never trust a supplied hash or generate hash text yourself. Missing/malformed metadata cannot deduplicate or reuse a saved decision.
 - If `fingerprint` field is present, use it
 - Otherwise: `{path}:{line}:{category}` (if line is present) or `{path}:{category}`
 
-Group findings by fingerprint. For findings sharing the same fingerprint:
+The last two rules apply only to other findings. Preserve `advisory`, `evidence_paths`, and `helper_target` through merging. Core review owns shared-code proposals: consolidate equivalent specialist advice with the core proposal and count overlapping savings once. Keep the actual specialist activity in its stats; core-only advice must not create a specialist dispatch or finding.
+
+Partition defects and advisories BEFORE grouping by fingerprint. A defect and an advisory must never merge with each other, even if a supplied fingerprint collides. A higher-confidence advisory or prior skipped extraction cannot replace, downgrade, or suppress a demonstrated defect. For findings sharing the same fingerprint within the same partition:
 - Keep the finding with the highest confidence score
 - Tag it: "MULTI-SPECIALIST CONFIRMED ({specialist1} + {specialist2})"
 - Boost confidence by +1 (cap at 10)
@@ -2044,11 +2051,13 @@ Group findings by fingerprint. For findings sharing the same fingerprint:
 - Confidence 3-4: move to appendix (suppress from main findings)
 - Confidence 1-2: suppress entirely
 
-**Advisory carve-out (simplification specialist):**
-Findings with `"advisory": true` are excluded from BOTH the quality_score
+**Advisory carve-out (all sources, including core shared-code and simplification):**
+After severity validation, remaining findings with `"advisory": true` are excluded from BOTH the quality_score
 summation and the findings-count header below — they are structure suggestions,
 not defects, and must not make "5 findings … 10/10" look contradictory. In
-Fix-First they are ASK-only: NEVER auto-applied, even when mechanical.
+Fix-First they are ASK-only: NEVER auto-applied, even when mechanical. Also exclude
+them from unresolved-defect totals and clean-status blockers. Preserve normal
+Fix-First handling for any real defect affecting the same code.
 
 **Compute PR Quality Score:**
 After merging, compute the quality score over NON-advisory findings only:
@@ -2078,6 +2087,8 @@ PR Quality Score: X/10
   `Simplification: lean already — nothing to cut.`
 - If it was not dispatched, print neither line.
 
+Do not add core shared-code savings to this specialist footer. Explain any overlap once in the core proposal instead of presenting duplicate savings.
+
 These findings flow into the Fix-First flow (item 4) alongside the checklist pass (Step 9).
 The Fix-First heuristic applies identically — specialist findings follow the same AUTO-FIX vs ASK classification (except advisory findings, which are ASK-only per the carve-out above).
 
@@ -2090,7 +2101,8 @@ For each specialist (testing, maintainability, security, performance, data-migra
 - If not applicable (e.g., red-team not activated): omit from the object
 
 Advisory findings COUNT in the stats `findings` field — the advisory
-carve-out governs the quality score and the findings-count header only.
+carve-out governs defect counts, score penalties, and clean-status blockers,
+not specialist activity. Count only findings that specialist actually returned.
 Logging simplification's advisories as `findings: 0` would auto-gate the
 lens into permanent silence after 10 dispatches.
 
@@ -2125,6 +2137,8 @@ If the Red Team subagent fails or times out, skip silently and continue.
 
 ### Step 9.3: Cross-review finding dedup
 
+**Validate advisory severity first.** If a current finding has `"severity":"CRITICAL"` and `"advisory":true`, remove `advisory` and retain its `CRITICAL` severity. Handle it as a normal defect before suppression, classification, counting, scoring, and persistence. Never downgrade severity to make advisory metadata consistent. Valid INFORMATIONAL advisories remain advisory in every category, including simplification. A prior saved finding with contradictory CRITICAL/advisory metadata cannot establish a skipped defect or advisory decision: exclude it from reuse and revalidate the current finding.
+
 Before classifying findings, check if any were previously skipped by the user in a prior review on this branch.
 
 ```bash
@@ -2133,7 +2147,12 @@ $GSTACK_ROOT/bin/gstack-review-read
 
 Parse the output: only lines BEFORE `---CONFIG---` are JSONL entries (the output also contains `---CONFIG---` and `---HEAD---` footer sections that are not JSONL — ignore those).
 
-For each JSONL entry that has a `findings` array:
+**Shared-code advisory decisions use the stricter rule below.** Do not send a
+finding through the ordinary primary-file rule if its category is `shared-libs`,
+its fingerprint starts `shared-libs:`, or it has `evidence_paths` / `helper_target`.
+Missing legacy metadata requires revalidation, not fallback to a line fingerprint.
+
+For each JSONL entry that has a `findings` array, for ordinary findings only:
 1. Collect all fingerprints where `action: "skipped"`
 2. Note the `commit` field from that entry
 
@@ -2146,8 +2165,73 @@ git diff --name-only <prior-review-commit> HEAD
 For each current finding (from both the checklist pass (Step 9) and specialist review (Step 9.1-9.2)), check:
 - Does its fingerprint match a previously skipped finding?
 - Is the finding's file path NOT in the changed-files set?
+- Is it the same advisory/defect kind? Never use a skipped advisory to suppress a real defect, including a defect with a colliding supplied fingerprint.
 
-If both conditions are true: suppress the finding. It was intentionally skipped and the relevant code hasn't changed.
+If all conditions are true: suppress the finding. It was intentionally skipped and the relevant code hasn't changed.
+
+**Reuse a skipped shared-code advisory only with complete structural evidence:**
+
+1. Recompute both structural identities with `sharedLibsFingerprint` from
+   `$GSTACK_ROOT/lib/review-evidence.ts` before deduplication. Both must
+   be valid, both findings must explicitly be advisory, the prior saved hash must
+   match its recomputation, and the prior action must explicitly be `skipped`.
+   Retain `evidence_paths` and `helper_target`; line numbers and a primary path
+   alone cannot identify an extraction.
+2. Require a prior completed, converged `review` record with a verified binding:
+   its start/end/record working-tree fingerprints must all match the current
+   `---WTREE---` value. Read the current REVIEW_START capture without consuming
+   it; require its repo, raw branch, and working-tree fingerprint to match the
+   current repository, branch, and snapshot. If the token or any field is missing,
+   changed, or unknown, revalidate. Do not mint a new token to enable suppression.
+3. Require the prior trusted `review_binding.branch_id` to match SHA-256 of
+   the exact current raw branch, which must match that captured branch. Compute
+   this digest in code, never from model-generated hash text. Sanitized log
+   filenames are not branch identity: `topic/a` and `topic-a` can collide.
+4. Positively verify EVERY evidence path is covered by that snapshot. Start with
+   tracked/non-ignored untracked enumeration, then inspect the actual file and
+   every path component using raw reads/lstat. A plain `ls-files` list is not
+   sufficient. Revalidate symlink targets/ancestors, submodules, ignored or outside
+   files, and missing or unreadable paths; their contents are not covered by the
+   parent tree fingerprint. Check effective Git attributes and configuration
+   without executing conversion: filter, working-tree-encoding, ident, text/eol,
+   and core.autocrlf can make different raw source produce the same Git tree.
+   Any active/unknown transformation requires fresh raw-source review, even when
+   the filtered tree hash is unchanged. Disable fsmonitor and optional locks for
+   these eligibility reads. Exclude assume-unchanged, skip-worktree and sparse
+   index entries. Compare every raw evidence file byte-for-byte with its blob in
+   that exact current working-tree snapshot, using Git object reads without
+   external diff/textconv or normalization. A missing blob, mismatch or unknown
+   coverage requires revalidation. Only verified regular, untransformed,
+   in-repository source paths enter `covered_paths`.
+   Require the prior finding's saved `snapshot_covered_paths` to cover every
+   evidence path too: current eligibility cannot establish what a prior filter
+   or index flag hid. Missing prior coverage is legacy metadata; revalidate it.
+5. Use the pure `canReuseSharedLibsAdvisory` helper for the final decision.
+   Supply the actually read records and positively verified snapshot fields as
+   literal JSON on stdin. The command below computes the live branch digest
+   itself; replace the empty example objects, keeping the quoted delimiter:
+
+```bash
+bun -e '
+const { createHash } = await import("node:crypto");
+const { canReuseSharedLibsAdvisory } = await import(process.argv[1]);
+const input = JSON.parse(await Bun.stdin.text());
+let branch = Bun.spawnSync(["git", "symbolic-ref", "--quiet", "--short", "HEAD"]);
+if (branch.exitCode !== 0) branch = Bun.spawnSync(["git", "rev-parse", "HEAD"]);
+if (branch.exitCode !== 0) { console.log(false); process.exit(0); }
+const rawBranch = branch.stdout.toString().replace(/\r?\n$/, "");
+const snapshot = { ...input.currentSnapshot, branch_id: createHash("sha256").update(rawBranch, "utf8").digest("hex") };
+console.log(canReuseSharedLibsAdvisory(input.priorFinding, input.currentFinding, input.priorReview, snapshot));
+' "$GSTACK_ROOT/lib/review-evidence.ts" <<'GSTACK_SHARED_LIBS_REUSE_JSON'
+{"priorFinding":{},"currentFinding":{},"priorReview":{},"currentSnapshot":{"wtree":"","covered_paths":[]}}
+GSTACK_SHARED_LIBS_REUSE_JSON
+```
+
+Suppress only when ALL eligibility checks passed and the helper returns true.
+Otherwise re-read all supporting callers and present any still-supported advice
+for a fresh decision. A changed secondary caller or changed raw bytes matter even
+when the primary anchor, commit, or normalized Git tree appears unchanged. A real
+defect always retains normal Fix-First handling independently of this advice.
 
 Print: "Suppressed N findings from prior reviews (previously skipped by user)"
 
@@ -2155,7 +2239,12 @@ Print: "Suppressed N findings from prior reviews (previously skipped by user)"
 
 If no prior reviews exist or none have a `findings` array, skip this step silently.
 
-Output a summary header: `Pre-Landing Review: N issues (X critical, Y informational)`
+Output a summary header: `Pre-Landing Review: N issues (X critical, Y informational)`.
+Count only non-advisory defects in that header; list optional advice separately
+with `[ADVISORY]`. Preserve advisory records and explicit decisions for
+persistence, but exclude advisories from score penalties, unresolved-defect
+totals, and clean-status blockers. This does not relax completion, convergence,
+or missing-reviewer rules.
 
 ### Step 9: Fix-First and persistence (items 4-9)
 

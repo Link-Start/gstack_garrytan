@@ -21,6 +21,18 @@
  * Each test lists the file patterns that, if changed, require the test to run.
  */
 export const E2E_TOUCHFILES: Record<string, string[]> = {
+  'shared-libs-review-path-eligibility': ['review/**', 'scripts/resolvers/shared-libs.ts', 'scripts/resolvers/review.ts', 'scripts/resolvers/review-army.ts', 'lib/review-evidence.ts', 'bin/gstack-review-log', 'bin/gstack-review-read', 'bin/gstack-wtree', 'test/helpers/shared-libs-eval-fixture.ts', 'test/skill-e2e-shared-libs-paths.test.ts', 'test/helpers/shared-libs-path-fixture.ts', 'test/shared-libs-fixture.test.ts', 'test/helpers/e2e-gate.ts', 'scripts/gen-skill-docs.ts', 'test/helpers/agent-sdk-runner.ts', 'lib/claude-bin.ts', 'lib/eval-model.ts'],
+  'shared-libs-review-index-flags': ['review/**', 'scripts/resolvers/shared-libs.ts', 'scripts/resolvers/review.ts', 'scripts/resolvers/review-army.ts', 'lib/review-evidence.ts', 'bin/gstack-review-log', 'bin/gstack-review-read', 'bin/gstack-wtree', 'test/helpers/shared-libs-eval-fixture.ts', 'test/skill-e2e-shared-libs-paths.test.ts', 'test/helpers/shared-libs-path-fixture.ts', 'test/shared-libs-fixture.test.ts', 'test/helpers/e2e-gate.ts', 'scripts/gen-skill-docs.ts', 'test/helpers/agent-sdk-runner.ts', 'lib/claude-bin.ts', 'lib/eval-model.ts'],
+  'shared-libs-review-prior-coverage': ['review/**', 'scripts/resolvers/shared-libs.ts', 'scripts/resolvers/review.ts', 'scripts/resolvers/review-army.ts', 'lib/review-evidence.ts', 'bin/gstack-review-log', 'bin/gstack-review-read', 'bin/gstack-wtree', 'test/helpers/shared-libs-eval-fixture.ts', 'test/skill-e2e-shared-libs-paths.test.ts', 'test/helpers/shared-libs-path-fixture.ts', 'test/shared-libs-fixture.test.ts', 'test/helpers/e2e-gate.ts', 'scripts/gen-skill-docs.ts', 'test/helpers/agent-sdk-runner.ts', 'lib/claude-bin.ts', 'lib/eval-model.ts'],
+  'shared-libs-codex-read-only': ['deslop-shared-libs/**', 'scripts/resolvers/shared-libs.ts', 'scripts/resolvers/index.ts', 'scripts/gen-skill-docs.ts', 'test/helpers/shared-libs-eval-fixture.ts', 'test/helpers/codex-session-runner.ts', 'test/helpers/skill-fixture.ts', 'test/helpers/hermetic-env.ts', 'test/helpers/eval-budgets.ts', 'test/codex-e2e-shared-libs.test.ts', 'test/shared-libs-fixture.test.ts', 'test/helpers/e2e-gate.ts', 'hosts/codex.ts', 'hosts/define-host.ts', 'scripts/resolvers/constants.ts'],
+  // Shared-code audit and scoped review lifecycle
+  'shared-libs-read-only': ['deslop-shared-libs/**', 'scripts/resolvers/shared-libs.ts', 'scripts/resolvers/index.ts', 'test/helpers/shared-libs-eval-fixture.ts', 'test/skill-e2e-shared-libs.test.ts', 'test/shared-libs-fixture.test.ts', 'test/helpers/e2e-gate.ts', 'scripts/gen-skill-docs.ts', 'lib/claude-bin.ts', 'lib/eval-model.ts'],
+  'shared-libs-unsupported-git': ['deslop-shared-libs/**', 'scripts/resolvers/shared-libs.ts', 'scripts/resolvers/index.ts', 'test/helpers/shared-libs-eval-fixture.ts', 'test/skill-e2e-shared-libs.test.ts', 'test/shared-libs-fixture.test.ts', 'test/helpers/e2e-gate.ts', 'scripts/gen-skill-docs.ts', 'lib/claude-bin.ts', 'lib/eval-model.ts'],
+  'shared-libs-review-lifecycle': ['deslop-shared-libs/**', 'scripts/resolvers/shared-libs.ts', 'scripts/resolvers/index.ts', 'test/helpers/shared-libs-eval-fixture.ts', 'review/**', 'scripts/resolvers/review.ts', 'scripts/resolvers/review-army.ts', 'lib/review-evidence.ts', 'bin/gstack-review-log', 'bin/gstack-review-read', 'bin/gstack-wtree', 'test/skill-e2e-shared-libs.test.ts', 'test/shared-libs-fixture.test.ts', 'test/helpers/e2e-gate.ts', 'scripts/gen-skill-docs.ts', 'test/helpers/agent-sdk-runner.ts', 'lib/claude-bin.ts', 'lib/eval-model.ts'],
+  'shared-libs-review-revalidation': ['deslop-shared-libs/**', 'scripts/resolvers/shared-libs.ts', 'scripts/resolvers/index.ts', 'test/helpers/shared-libs-eval-fixture.ts', 'review/**', 'scripts/resolvers/review.ts', 'scripts/resolvers/review-army.ts', 'lib/review-evidence.ts', 'bin/gstack-review-log', 'bin/gstack-review-read', 'bin/gstack-wtree', 'test/skill-e2e-shared-libs.test.ts', 'test/shared-libs-fixture.test.ts', 'test/helpers/e2e-gate.ts', 'scripts/gen-skill-docs.ts', 'test/helpers/agent-sdk-runner.ts', 'lib/claude-bin.ts', 'lib/eval-model.ts'],
+  'shared-libs-opportunity-judgment': ['deslop-shared-libs/**', 'scripts/resolvers/shared-libs.ts', 'scripts/resolvers/index.ts', 'test/helpers/shared-libs-eval-fixture.ts', 'test/skill-e2e-shared-libs-periodic.test.ts', 'test/shared-libs-fixture.test.ts', 'test/helpers/e2e-gate.ts', 'scripts/gen-skill-docs.ts', 'test/helpers/llm-judge.ts', 'lib/claude-bin.ts', 'lib/eval-model.ts'],
+  'shared-libs-pr-coverage': ['deslop-shared-libs/**', 'scripts/resolvers/shared-libs.ts', 'scripts/resolvers/index.ts', 'test/helpers/shared-libs-eval-fixture.ts', 'test/skill-e2e-shared-libs-periodic.test.ts', 'test/shared-libs-fixture.test.ts', 'test/helpers/e2e-gate.ts', 'scripts/gen-skill-docs.ts', 'test/helpers/llm-judge.ts', 'lib/claude-bin.ts', 'lib/eval-model.ts'],
+  'shared-libs-plan-callers': ['deslop-shared-libs/**', 'scripts/resolvers/shared-libs.ts', 'scripts/resolvers/index.ts', 'test/helpers/shared-libs-eval-fixture.ts', 'plan-eng-review/**', 'test/skill-e2e-shared-libs-periodic.test.ts', 'test/eng-scope-entry-ap.test.ts', 'test/plan-scope-recovery-av.test.ts', 'test/fixtures/plan-scope-recovery-av.json', 'test/review-entry-and-design-clarity-au.test.ts', 'scripts/resolvers/preamble/generate-preamble-bash.ts', 'scripts/resolvers/preamble/generate-completion-status.ts', 'test/shared-libs-fixture.test.ts', 'test/helpers/e2e-gate.ts', 'scripts/gen-skill-docs.ts', 'test/helpers/agent-sdk-runner.ts', 'test/helpers/llm-judge.ts', 'lib/claude-bin.ts', 'lib/eval-model.ts'],
   // Browse core (+ test-server dependency)
   'browse-basic':    ['browse/src/**', 'browse/test/test-server.ts', 'test/skill-e2e-bws.test.ts'],
   'browse-snapshot': ['browse/src/**', 'browse/test/test-server.ts', 'test/skill-e2e-bws.test.ts'],
@@ -960,6 +972,17 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
  * Must have exactly the same keys as E2E_TOUCHFILES.
  */
 export const E2E_TIERS: Record<string, 'gate' | 'periodic'> = {
+  'shared-libs-review-path-eligibility': 'gate',
+  'shared-libs-review-index-flags': 'gate',
+  'shared-libs-review-prior-coverage': 'gate',
+  'shared-libs-codex-read-only': 'periodic',
+  'shared-libs-read-only': 'gate',
+  'shared-libs-unsupported-git': 'gate',
+  'shared-libs-review-lifecycle': 'gate',
+  'shared-libs-review-revalidation': 'gate',
+  'shared-libs-opportunity-judgment': 'periodic',
+  'shared-libs-pr-coverage': 'periodic',
+  'shared-libs-plan-callers': 'periodic',
   // Browse core — gate (if browse breaks, everything breaks)
   'browse-basic': 'gate',
   'browse-snapshot': 'gate',
