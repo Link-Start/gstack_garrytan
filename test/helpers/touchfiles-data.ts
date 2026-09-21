@@ -370,6 +370,8 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     "test/eng-required-parity-au.test.ts", "test/fixtures/eng-required-parity-au.md", "test/helpers/eng-retained-corpus.ts", "test/eng-retained-corpus-au.test.ts", "test/fixtures/eng-retained-corpus-au.md", "test/eng-annotated-cache-au.test.ts", "test/fixtures/eng-annotated-cache-au.json", "test/review-entry-and-design-clarity-au.test.ts", "scripts/resolvers/preamble/generate-preamble-bash.ts",
   ],
   'plan-design-finding-count':   [
+    'test/helpers/design-count-fixture.ts', 'test/design-count-fixture.test.ts', 'test/fixtures/design-count-sep20-calls.json', 'test/fixtures/design-count-sep21-first-call.json', 'test/fixtures/design-count-sep21-confirm-first-call.json',
+    'test/design-count-primary-facts.test.ts', 'test/fixtures/design-count-sep21-declared-first-call.json', 'test/fixtures/design-count-sep21-header-first-call.json',
     "test/design-compact-primary-aw.test.ts",
     "test/fixtures/design-compact-primary-aw-call.json",
     "test/plan-count-session-cwd.test.ts",
@@ -402,6 +404,7 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     "test/review-entry-and-design-clarity-au.test.ts", "scripts/resolvers/preamble/generate-preamble-bash.ts",
   ],
   'plan-devex-finding-count':    [
+    'test/fixtures/devex-seed-sep21-calls.json',
     "test/dx-upgrade-transition-aw.test.ts",
     "test/fixtures/dx-upgrade-transition-aw.json",
     "test/plan-count-session-cwd.test.ts",

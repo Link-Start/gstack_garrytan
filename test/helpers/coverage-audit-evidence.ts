@@ -124,7 +124,7 @@ function readsFile(command: unknown, file: string, cwd: string, output: unknown,
       if (/[<>]/.test(stage.replace(/'[^']*'|"[^"]*"/g, ''))) return false;
       // Backslashes are data only in these closed grep display patterns.
       // In particular, echo -e cannot print replacement fixture bodies.
-      const grepRange = /^grep\s+-n(?:\s+-i)?(?:\s+-B\d{1,4})?(?:\s+-A\d{1,4})?\s+"(?:[^"\\$`]|\\[|.])*"\s+(.+)$/.exec(stage);
+      const grepRange = /^grep\s+-n(?:\s+-i)?(?:\s+-B\d{1,4})?(?:\s+-A\d{1,4})?\s+(?:"(?:[^"\\$`]|\\[|.])*"|'(?:[^'\\$`]|\\[|.])*')\s+(.+)$/.exec(stage);
       const grepInput = grepRange && literal(grepRange[1]!);
       const displayGrep = Boolean(grepInput && !grepInput.startsWith('-'));
       // An awk range without actions only prints matching input lines.
@@ -151,12 +151,13 @@ function readsFile(command: unknown, file: string, cwd: string, output: unknown,
   };
   if (parts.some(p => p && !readOnly(p))) return false;
   // A successful, unmixed && list may include literal display separators
-  // and a closed diff-stat command. These segments never receive file credit.
+  // and closed Git log/diff-stat commands. These segments receive no file credit.
   const andDisplay = (p: string) => {
     if (p === 'echo' || /^echo\s+[-=]+$/.test(p) || /^echo [-=]{2,} [A-Za-z0-9_.\/-]+ [-=]{2,}$/.test(p)) return true;
     const caption = /^echo\s+(.+)$/.exec(p), value = caption && literal(caption[1]!);
     if (value && /^[-=]{2,}\s+[A-Za-z0-9_][A-Za-z0-9_./-]*(?:\s+(?:vs|and)\s+[A-Za-z0-9_][A-Za-z0-9_./-]*)?\s+[-=]{2,}$/.test(value)) return true;
-    return /^git\s+diff(?:\s+[A-Za-z0-9_][A-Za-z0-9_./~^-]*)?\s+--stat$/.test(p);
+    return /^git\s+diff(?:\s+[A-Za-z0-9_][A-Za-z0-9_./~^-]*)?\s+--stat$/.test(p) ||
+      /^git\s+log\s+--oneline\s+[A-Za-z0-9_][A-Za-z0-9_./~^-]*$/.test(p);
   };
   if (andList && semicolons) {
     const caption = /^echo (.+)$/.exec(parts[0] ?? ''), value = caption && literal(caption[1]!);
@@ -296,7 +297,7 @@ function diagramLegend(lines: string[], firstRow: number): Map<string, boolean> 
     // Only a legend label or a literal file's coverage-map caption may precede
     // the pair. Arbitrary prose must not be discarded into an affirmative key.
     const prefix = line.slice(0, start).trim();
-    if (prefix && !new RegExp(String.raw`^(?:Legend:|${coverageMapCaption})$`, 'i').test(prefix)) return new Map();
+    if (prefix && !new RegExp(String.raw`^(?:Legend:?|${coverageMapCaption})$`, 'i').test(prefix)) return new Map();
     const match = legend.exec(line.slice(start).trim());
     if (!match || match[1] === match[3]) return new Map();
     const entries = [[match[1]!, /^(?:TESTED|COVERED)$/i.test(match[2]!)],

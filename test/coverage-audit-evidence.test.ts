@@ -58,6 +58,66 @@ describe('coverage audit native evidence',()=>{
       expect(verdict(s)).toEqual({ sourceRead: true, testsRead: true, diagram: true, passed: true, failures: [] });
     }
   });
+  // Exact public diagram from the completed, failed September 21 /review run.
+  // Its footer declares both symbol meanings without punctuation after Legend.
+  const symbolFooterDiagram = `\`\`\`
+src/billing.ts                                        test/billing.test.ts
+======================================================================================
+
+processPayment(amount, currency)                      describe('processPayment')
+│
+├── [✓] amount > 0 && currency in {USD, EUR}          processes valid payment  (L6-9)
+│       → return { status: 'success', ... }  (L5)      processPayment(100, 'USD')
+│
+├── [✗] amount <= 0                                   ── NO TEST ──
+│       → throw 'Invalid amount'  (L3)                  gap: 0, negative values untested
+│
+└── [✗] currency not USD/EUR                          ── NO TEST ──
+        → throw 'Unsupported currency'  (L4)            gap: 'GBP', '', lowercase 'usd'
+
+
+refundPayment(paymentId, reason)                      (no describe block; not imported)
+│
+├── [✗] paymentId && reason truthy                    ── NO TEST ──
+│       → return { status: 'refunded', ... }  (L11)     gap: happy path never exercised
+│
+├── [✗] !paymentId                                    ── NO TEST ──
+│       → throw 'Payment ID required'  (L9)             gap: '' / undefined untested
+│
+└── [✗] !reason                                       ── NO TEST ──
+        → throw 'Reason required'  (L10)                gap: '' / undefined untested
+
+======================================================================================
+Legend  [✓] covered   [✗] gap
+
+Branches:   1 / 6 covered   (17%)
+Functions:  1 / 2 covered   (50%)
+Guard clauses tested: 0 / 4
+\`\`\``;
+  test('the exact paid symbol footer may omit its colon', () => {
+    const s = synthetic(); s.result.output = symbolFooterDiagram;
+    expect(verdict(s)).toEqual({ sourceRead: true, testsRead: true, diagram: true, passed: true, failures: [] });
+  });
+  test('a colonless symbol footer still requires a current, affirmative, owned key', () => {
+    const key = 'Legend  [✓] covered   [✗] gap';
+    for (const replacement of ['', '> ' + key, '"' + key + '"', 'Example: ' + key,
+      'If approved: ' + key, key.replace('covered   [✗] gap', 'gap   [✗] covered'),
+      key.replace('[✗] gap', '[✗] covered'), key.replace('[✗]', '[✓]'),
+      key + ' except refunds', key + '\nLegend [✓] gap [✗] covered',
+      key + '\nThis legend is withdrawn.', key + '\nThis legend applies only if approved.',
+    ]) {
+      const s = synthetic(); s.result.output = symbolFooterDiagram.replace(key, replacement);
+      expect(verdict(s).diagram, replacement).toBe(false);
+    }
+    for (const output of [
+      '\`\`\`text\n' + key + '\n\`\`\`\n' + symbolFooterDiagram.replace(key, ''),
+      symbolFooterDiagram.replaceAll('refundPayment', 'otherRefund'),
+      symbolFooterDiagram.replace('├── [✓] amount', '├── [✗] amount'),
+      'Example:\n' + symbolFooterDiagram, '\`\`\`\`markdown\n' + symbolFooterDiagram + '\n\`\`\`\`',
+    ]) {
+      const s = synthetic(); s.result.output = output; expect(verdict(s).diagram).toBe(false);
+    }
+  });
   test('hash checkbox and branch-line legends retain explicit local meanings and ownership', () => {
     const caption = 'src/billing.ts — coverage map [#] tested [ ] GAP';
     for (const legend of ['', '> ' + caption, '"' + caption + '"', 'Example: ' + caption,
@@ -189,6 +249,66 @@ describe('coverage audit native evidence',()=>{
     expect(verdict(repeated.s).sourceRead).toBe(false); expect(verdict(repeated.s).testsRead).toBe(false);
     const missing = mixedDisplay(true); missing.result.content = missing.result.content.slice(missing.result.content.indexOf('==== SRC ===='));
     expect(verdict(missing.s).sourceRead).toBe(false); expect(verdict(missing.s).testsRead).toBe(false);
+  });
+  function boundDisplay(kind: 'and-log' | 'quoted-grep') {
+    const s = synthetic();
+    const numbered = (body: string) => body.replace(/\n$/, '').split('\n').map((line, index) => `${index + 1}\t${line}`).join('\n');
+    // Exact commands from the two completed, failed 2026-09-20 bound reruns.
+    const command = kind === 'and-log'
+      ? 'cat -n src/billing.ts && echo ==== && cat -n test/billing.test.ts && echo ==== && git log --oneline main..HEAD && git diff main --stat'
+      : "grep -n -i 'diagram\\|coverage\\|tested\\|gap' review/SKILL.md | head -60; echo ======SRC; cat -n src/billing.ts; echo ======TEST; cat -n test/billing.test.ts; echo ======DIFF; git diff main...HEAD --stat";
+    s.result.transcript.splice(3, 2);
+    const use = block(s, 1), result = block(s, 2);
+    Object.assign(use, {name: 'Bash', input: {command}});
+    result.content = kind === 'and-log'
+      ? numbered(s.files.source.content) + '\n====\n' + numbered(s.files.tests.content) + '\n===='
+      : '119: Test coverage gaps for stated requirements\n======SRC\n' + numbered(s.files.source.content)
+        + '\n======TEST\n' + numbered(s.files.tests.content) + '\n======DIFF';
+    return {s, use, result};
+  }
+  test.each(['and-log', 'quoted-grep'] as const)('complete parent reads survive closed neighboring displays: %s', kind => {
+    expect(verdict(boundDisplay(kind).s)).toEqual({sourceRead:true, testsRead:true, diagram:true, passed:true, failures:[]});
+  });
+  test('neighboring log and quoted grep displays cannot replace complete owned delivery', () => {
+    for (const kind of ['and-log', 'quoted-grep'] as const) for (const mutate of [
+      (x: ReturnType<typeof boundDisplay>) => { x.result.is_error = true; },
+      (x: ReturnType<typeof boundDisplay>) => { x.result.content = 'src/billing.ts and test/billing.test.ts were read'; },
+      (x: ReturnType<typeof boundDisplay>) => { x.s.result.transcript[2].session_id = 'foreign'; },
+      (x: ReturnType<typeof boundDisplay>) => { x.s.result.transcript[2].parent_tool_use_id = 'child'; },
+      (x: ReturnType<typeof boundDisplay>) => { x.s.result.transcript[1].parent_tool_use_id = 'child'; },
+      (x: ReturnType<typeof boundDisplay>) => { x.result.tool_use_id = 'unpaired'; },
+      (x: ReturnType<typeof boundDisplay>) => { x.s.result.transcript.push(clone(x.s.result.transcript[2])); },
+    ]) {
+      const x = boundDisplay(kind); mutate(x);
+      expect(verdict(x.s).sourceRead).toBe(false); expect(verdict(x.s).testsRead).toBe(false);
+    }
+    for (const kind of ['and-log', 'quoted-grep'] as const) for (const [key, line] of [
+      ['sourceRead', /.*export function processPayment.*\n/], ['testsRead', /.*import \{ describe.*\n/],
+    ] as const) {
+      const x = boundDisplay(kind); x.result.content = x.result.content.replace(line, '');
+      expect(verdict(x.s)[key]).toBe(false); expect(verdict(x.s).passed).toBe(false);
+    }
+  });
+  test('closed neighboring log and grep grammars reject unsafe lookalikes', () => {
+    for (const display of [
+      'git log --oneline main..HEAD --output=src/billing.ts', 'git log --oneline main..HEAD --format=%B',
+      'git log --oneline main..HEAD --ext-diff', 'git log --oneline main..HEAD > output.txt',
+      'git log --oneline "main..HEAD"', 'git log --oneline main..HEAD || echo ok',
+    ]) {
+      const x = boundDisplay('and-log'); x.use.input.command = x.use.input.command.replace('git log --oneline main..HEAD', display);
+      expect(verdict(x.s).sourceRead).toBe(false); expect(verdict(x.s).testsRead).toBe(false);
+    }
+    for (const display of [
+      'grep -n -i "$(touch sentinel)" review/SKILL.md | head -60',
+      'grep -n -i "`touch sentinel`" review/SKILL.md | head -60',
+      "grep -n -i 'diagram\\|coverage' --help | head -60",
+      "grep -n -i 'diagram\\|coverage' review/SKILL.md > output.txt",
+      "grep -n -i 'diagram\\|coverage' review/SKILL.md | python3 -c 'pass'",
+      "grep -n -i 'diagram\\ncoverage' review/SKILL.md | head -60",
+    ]) {
+      const x = boundDisplay('quoted-grep'); x.use.input.command = x.use.input.command.replace(/^[^;]+/, display);
+      expect(verdict(x.s).sourceRead).toBe(false); expect(verdict(x.s).testsRead).toBe(false);
+    }
   });
   test('each exact source and test file must be successfully delivered',()=>{
     for(const mutate of [
