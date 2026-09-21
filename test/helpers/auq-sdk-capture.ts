@@ -1,15 +1,7 @@
 /**
- * SDK-based AUQ capture — the reliable way to grade AskUserQuestion content.
- *
- * Real-PTY capture is lossy for plan-mode AUQs: they render every option on one
- * cursor-positioned logical line that stripAnsi can't reconstruct, so format
- * predicates (ELI10:, Net:, ✅) silently miss even when the question is
- * well-formed. This helper instead uses the `claude -p` SDK path (the same one
- * skill-e2e-plan-format uses): the agent is told to WRITE the verbatim text of
- * the AskUserQuestion it would have asked to a file. That captures exactly what
- * the model GENERATES — the surface where carving could degrade quality — with
- * zero rendering loss. The TTY rendering layer is identical for fat and slim
- * skills, so it is not where token-reduction degradation can hide.
+ * Shared AUQ grading and fixture helpers. First-question matrix captures use
+ * exact public native tool fields bound to a displayed question. CEO mode
+ * selection and section-loading captures retain their existing SDK contracts.
  */
 import { resolveEvalModel } from '../../lib/eval-model';
 import * as fs from 'node:fs';
@@ -17,6 +9,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { runSkillTest, type SkillTestResult } from './session-runner';
+import { captureNativeFirstAuq } from './auq-native-capture';
 
 const ROOT = path.resolve(__dirname, '..', '..');
 
@@ -167,12 +160,22 @@ export function skillFromWorktree(skillName: string): { skillMd: string; section
   };
 }
 
+/** A partial artifact never turns a failed provider execution into a capture. */
+function completedAuqCapture(result: SkillTestResult, outFile: string, testName: string): string {
+  if (result.exitReason !== 'success') {
+    // output is the public terminal result, not the model's private reasoning
+    // or arbitrary transcript blocks. Keep request IDs and provider errors visible.
+    const diagnostic = result.output.trim().slice(0, 2000);
+    throw new Error(`${testName}: AUQ capture failed (${result.exitReason})`
+      + (diagnostic ? `: ${diagnostic}` : '. No public terminal diagnostic returned.'));
+  }
+  try { return fs.readFileSync(outFile, 'utf-8'); } catch { return ''; }
+}
+
 /**
- * Generic: drive ANY skill to its FIRST AskUserQuestion and capture the
- * verbatim decision-brief text the model would have shown. `scenario` is the
- * per-skill prose that triggers a real AUQ (e.g. "review plan.md", "audit
- * vuln.ts for security"). Absolute skill path + Read/Write-only so the agent
- * cannot wander to the global install.
+ * Drive any planted skill to its first displayed native AskUserQuestion.
+ * Capture one question's exact public fields, without answering it or claiming
+ * workflow completion. Missing format stays missing; refusals stay failures.
  */
 export async function captureFirstAuq(opts: {
   planDir: string;
@@ -182,32 +185,7 @@ export async function captureFirstAuq(opts: {
   runId?: string;
   model?: string;
 }): Promise<string> {
-  const outFile = path.join(opts.planDir, 'ask-capture.md');
-  const skillPath = path.join(opts.planDir, opts.skillName, 'SKILL.md');
-  const prompt = `You are running a format-capture test. The ONLY skill file you may read is this absolute path: ${skillPath}. Do NOT search for, Glob, find, or read any other SKILL.md anywhere — especially nothing under ~/.claude or /Users.
-
-Read ${skillPath} and follow its workflow for this scenario:
-
-${opts.scenario}
-
-This is a capture test, not an interactive session. Skip any system-audit / environment-setup / codebase-exploration steps. When you reach the FIRST point where the skill would call AskUserQuestion, write the verbatim full decision-brief text of that question (title, ELI10, stakes, recommendation, every option with its ✅/❌ pros/cons bullets, and the Net line) to ${outFile}. Do NOT call any tool to ask the user. Do NOT paraphrase. After writing the file, STOP.`;
-
-  await runSkillTest({
-    prompt,
-    workingDirectory: opts.planDir,
-    allowedTools: ['Read', 'Write'],
-    maxTurns: 14,
-    timeout: 240_000,
-    testName: opts.testName,
-    runId: opts.runId,
-    model: resolveEvalModel('capture', opts.model),
-  });
-
-  try {
-    return fs.readFileSync(outFile, 'utf-8');
-  } catch {
-    return '';
-  }
+  return (await captureNativeFirstAuq(opts)).text;
 }
 
 /**
@@ -363,6 +341,7 @@ export async function captureModeSelectionAuq(opts: {
   model?: string;
 }): Promise<string> {
   const outFile = path.join(opts.planDir, 'ask-capture.md');
+  fs.rmSync(outFile, { force: true });
   const skillPath = path.join(opts.planDir, 'plan-ceo-review', 'SKILL.md');
   const planPath = path.join(opts.planDir, 'plan.md');
   // CRITICAL: pin the EXACT skill file. Without this the agent runs
@@ -383,13 +362,15 @@ Proceed to Step 0F (Mode Selection), where the skill presents the 4 review-mode 
 
 Write the verbatim text of that AskUserQuestion (the full decision brief: title, ELI10, stakes, recommendation, every option with its pros/cons bullets, and the Net line) to ${outFile}. Do NOT call any tool to ask the user. Do NOT paraphrase. After writing the file, stop.`;
 
-  await runSkillTest({
+  const result = await runSkillTest({
     prompt,
     workingDirectory: opts.planDir,
     // Read + Write only: no Bash means the agent cannot `find /` its way to the
     // global install, and the skill's preamble bash blocks (irrelevant to format
     // capture) can't run and wander.
     allowedTools: ['Read', 'Write'],
+    tools: ['Read', 'Write'],
+    publicStreamDiagnostics: true,
     maxTurns: 12,
     timeout: 240_000,
     testName: opts.testName,
@@ -397,14 +378,5 @@ Write the verbatim text of that AskUserQuestion (the full decision brief: title,
     model: resolveEvalModel('capture', opts.model),
   });
 
-  try {
-    const text = fs.readFileSync(outFile, 'utf-8');
-    // Defense in depth: verify the agent actually read the planted skill, not a
-    // global one. If the captured run somehow read elsewhere we can't detect it
-    // from the output file alone, so callers should also confirm via the run
-    // log; this guard at least catches an empty/placeholder capture.
-    return text;
-  } catch {
-    return '';
-  }
+  return completedAuqCapture(result, outFile, opts.testName);
 }
