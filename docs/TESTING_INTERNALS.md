@@ -46,9 +46,21 @@ Autoplan resolves each review skill from its own installed host registry.
 existing xterm dependency interprets cursor moves and erases; old menus in the
 raw stream cannot establish a current prompt. Snapshots preserve
 `terminal.raw.log`, `terminal.visible.log`, and `terminal.screen.log` separately.
+Setting `EVALS_RUN_ID` or `GSTACK_EVAL_DIR` retains these snapshots; an output
+directory without a run ID gets a stable, unique local ID for that writer.
 Completed native transcript calls establish question counts and phase coverage.
 Report-aware count tests also require a fresh, complete report and native
 completion evidence before accepting a completion heading.
+
+The periodic first-question matrix uses `test/helpers/auq-native-capture.ts`
+to match the first public `PreToolUse` AskUserQuestion payload to its current
+native display. It grades that question's exact public fields without answering
+it or reading model transcripts. `question_captured` records
+`workflowCompleted: false`. With `GSTACK_EVAL_DIR`, `EVALS_RUN_ID`, or an explicit
+run ID, `native-auq/<run-id>/<test>-<suffix>/capture.json` under the eval directory
+retains the public payload, bounded current viewport, and capture outcome.
+CEO mode-selection and section-loading captures retain their noninteractive
+contracts in `auq-sdk-capture.ts`.
 
 The engineering and DX finding fixtures check coverage of their seeded issues
 rather than cap the total number of review questions. Each decision needs a
@@ -154,7 +166,7 @@ Its gate-specific classifier also recognizes answered, untagged UI issues with
 concrete numbered design choices. The isolated fixture owns the target; repeated
 filenames, pass labels, question verbs, and option punctuation are not required.
 Explicit wrong-plan context and workflow menus are rejected; periodic
-seeded-finding classifiers are unchanged.
+seeded-finding classifiers separately verify fixture-owned findings.
 
 **Paid suite (sharded runner, local AND CI).** `scripts/test-paid-shards.ts`
 is the single selection engine: 1 file per shard, `EVALS_JOBS` shard
