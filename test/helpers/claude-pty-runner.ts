@@ -143,6 +143,7 @@ export interface ClaudePtySession {
    * dialog or boot banner residue. Returns a marker handle.
    */
   mark(): number;
+  waitForOutput(since: number, timeoutMs: number): Promise<void>;
   /** Visible text since the most recent (or specific) mark. */
   visibleSince(marker?: number): string;
   /**
@@ -3637,7 +3638,7 @@ export const designFirstReviewAUQ: Step0BoundaryPredicate = (fp) => {
   // question ID as well, and exclude its scope/focus/onboarding identities.
   const id = /<gstack-qid:\s*plan-design-review-([a-z0-9-]+)/i.exec(fp.promptSnippet)?.[1];
   if (id && /(?:^|[│\s])D\s*\d+\s*[—–-]/i.test(fp.promptSnippet) &&
-      !/(?:^|-)(?:scope|focus|setup|routing|onboarding|posture|mockups?|target)(?:-|$)/i.test(id) &&
+      !/(?:^|-)(?:scope|focus|setup|routing|onboarding|posture|mockups?|target|outside(?:-design)?-voices)(?:-|$)/i.test(id) &&
       !designStep0Boundary(fp)) return true;
   // Explicit pass headings are also review evidence; an initial assessment
   // that merely mentions reviewing seven passes does not match this shape.
@@ -3674,7 +3675,10 @@ export async function launchClaudePty(
 
   let buffer = '';
   let exited = false;
+  let closing = false;
   let exitCodeCaptured: number | null = null;
+  const outputWaiters = new Set<() => void>();
+  const notifyOutput = () => { for (const done of outputWaiters) done(); };
 
   const args: string[] = [];
   // Pin the model so smokes don't inherit the operator's settings.json model
@@ -3757,6 +3761,7 @@ export async function launchClaudePty(
         const text = chunk.toString('utf-8');
         buffer += text;
         if (screen && !screenClosing) screen.write(text);
+        notifyOutput();
       },
     },
     cwd,
@@ -3770,10 +3775,12 @@ export async function launchClaudePty(
       .then(async (code: number | null) => {
         exitCodeCaptured = code;
         exited = true;
+        notifyOutput();
         await disposeScreen();
       })
       .catch(async () => {
         exited = true;
+        notifyOutput();
         await disposeScreen();
       });
   }
@@ -3848,6 +3855,19 @@ export async function launchClaudePty(
     return stripAnsi(buffer.slice(offset));
   }
 
+  async function waitForOutput(since: number, timeoutMs: number): Promise<void> {
+    if (buffer.length > since || exited || closing) return;
+    await new Promise<void>((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        outputWaiters.delete(done);
+        resolve();
+      };
+      const timer = setTimeout(done, timeoutMs);
+      outputWaiters.add(done);
+    });
+  }
+
   async function waitForAny(
     patterns: Array<RegExp | string>,
     waitOpts?: { timeoutMs?: number; pollMs?: number; since?: number },
@@ -3890,25 +3910,28 @@ export async function launchClaudePty(
   }
 
   async function close(): Promise<void> {
+    closing = true;
+    notifyOutput();
     clearTimeout(wallTimer);
     clearTimeout(trustWatcherStop);
     clearInterval(trustWatcher);
     for (const timer of trustInputTimers) clearTimeout(timer);
     if (exited) { pendingFiles.forEach(({ recorder }) => recorder.dispose()); pendingExit?.dispose(); pendingQuestion?.dispose(); pendingArtifact?.dispose(); await disposeScreen(); return; }
-    try {
-      proc.kill?.('SIGINT');
-    } catch {
-      /* ignore */
-    }
-    // Wait up to 2s for graceful exit.
-    await Promise.race([exitedPromise, Bun.sleep(2000)]);
-    if (!exited) {
+    for (const [signal, timeout] of [['SIGINT', 2000], ['SIGKILL', 1000]] as const) {
+      if (exited) break;
       try {
-        proc.kill?.('SIGKILL');
+        proc.kill?.(signal);
       } catch {
         /* ignore */
       }
-      await Promise.race([exitedPromise, Bun.sleep(1000)]);
+      let deadline!: ReturnType<typeof setTimeout>;
+      try {
+        await Promise.race([exitedPromise, new Promise<void>((resolve) => {
+          deadline = setTimeout(resolve, timeout);
+        })]);
+      } finally {
+        clearTimeout(deadline);
+      }
     }
     pendingFiles.forEach(({ recorder }) => recorder.dispose());
     pendingExit?.dispose();
@@ -3928,6 +3951,7 @@ export async function launchClaudePty(
       return screen.read();
     },
     mark,
+    waitForOutput,
     visibleSince,
     waitForAny,
     waitFor,
@@ -4256,7 +4280,7 @@ export async function runPlanSkillObservation(opts: {
           ...highWaterFlags(),
         };
       }
-      if (visible.includes('Unknown command:')) {
+      if (isUnknownSlashCommandVisible(visible, `/${opts.skillName}`)) {
         return {
           outcome: 'exited',
           summary: `claude rejected /${opts.skillName} as unknown command (skill not registered in this cwd)`,
@@ -4440,6 +4464,12 @@ export interface PlanSkillCountObservation {
   administrativeCount: number;
 }
 
+export function isUnknownSlashCommandVisible(visible: string, slashCommand: string): boolean {
+  const command = slashCommand.trim().split(/\s+/)[0];
+  return [...visible.matchAll(/Unknown command:\s*(\/[\w-]+)(?=\s|$)/g)]
+    .some(match => match[1] === command);
+}
+
 /**
  * Drive a plan-* skill in plan mode and count distinct native review-phase
  * AskUserQuestions until a terminal signal fires. Each run disables the
@@ -4536,6 +4566,7 @@ export async function runPlanSkillCounting(opts: {
   firstAUQPick?: (fp: AskUserQuestionFingerprint) => number;
   /** Total budget including startup and cleanup. Must exceed the 5s cleanup reserve. Default 1_500_000. */
   timeoutMs?: number;
+  startupReadyMarker?: string;
   /** Extra env merged into the spawned `claude` process. */
   env?: Record<string, string>;
   /** Override the spawned model. Defaults via launchClaudePty's chain. */
@@ -4545,6 +4576,9 @@ export async function runPlanSkillCounting(opts: {
   const startedAt = Date.now();
   const defaultPick = opts.defaultPick ?? 1;
   const timeoutMs = opts.timeoutMs ?? 1_500_000;
+  if (opts.startupReadyMarker !== undefined && !opts.startupReadyMarker.length) {
+    throw new RangeError('Plan counting startup-ready marker must not be empty');
+  }
   // The caller may use this same limit as its Bun timeout. Leave room for
   // close()'s 2s graceful + 1s forced exit waits and artifact/fixture cleanup.
   // A second work window after boot lets Bun retry while this body is alive.
@@ -4642,14 +4676,29 @@ export async function runPlanSkillCounting(opts: {
     return observation;
   }
 
+  let observedOutput = session.mark();
+  let lastObservationAt = -Infinity;
   try {
-    if (await waitForWork(8000)) { // boot grace is part of the total budget
-      session.mark();
+    let startupReady: boolean;
+    if (opts.startupReadyMarker !== undefined) {
+      await session.waitFor(opts.startupReadyMarker, { timeoutMs: Math.min(8000, remainingWork()) });
+      startupReady = remainingWork() > 0;
+    } else {
+      startupReady = await waitForWork(8000);
+    }
+    if (startupReady) {
+      observedOutput = session.mark();
       session.send(`${opts.slashCommand}\r`);
     }
 
     while (remainingWork() > 0) {
-      if (!await waitForWork(2000)) break;
+      await session.waitForOutput(observedOutput, Math.min(2000, remainingWork()));
+      if (remainingWork() <= 0) break;
+      const coalesceMs = session.rawOutput().length > observedOutput
+        ? 250 : 250 - (performance.now() - lastObservationAt);
+      if (coalesceMs > 0 && !await waitForWork(coalesceMs)) break;
+      observedOutput = session.mark();
+      lastObservationAt = performance.now();
       const visible = viewport = await session.currentScreen();
       if (remainingWork() <= 0) break;
       transcript = session.hermeticConfigDir
@@ -4703,7 +4752,7 @@ export async function runPlanSkillCounting(opts: {
         );
       }
 
-      if (visible.includes('Unknown command:')) {
+      if (isUnknownSlashCommandVisible(visible, opts.slashCommand)) {
         return snapshot(
           'exited',
           `claude rejected ${opts.slashCommand} as unknown command (skill not registered in this cwd)`,
@@ -5010,7 +5059,7 @@ export async function runPlanSkillFloorCheck(opts: {
           elapsedMs: Date.now() - startedAt,
         });
       }
-      if (visible.includes('Unknown command:')) {
+      if (isUnknownSlashCommandVisible(visible, opts.slashCommand)) {
         return finish({
           auqObserved: false,
           outcome: 'exited',
