@@ -34,11 +34,13 @@ You get up to five supported opportunities and up to three recommendations, with
 
 - **Engineering plans and code reviews share one extraction rubric.** `/plan-eng-review` can evaluate proposed callers with labeled assumptions. `/review` checks actual changed code and related callers even for small diffs and Codex installations without Review Army.
 - **Extraction advice stays separate from defects.** Advice requires approval, survives review persistence with its source evidence, and cannot suppress a real defect. Reusing a previous skip requires matching structural identity, verified source coverage, and branch binding.
+- **Decision briefs retain their headings and closing tradeoff in native question tools.** The question carries its pros-and-cons heading and final summary; options retain their own benefits and drawbacks.
 
 #### For contributors
 
 - Added generated-host, discovery, identity, fixture, source-binding, and behavioral coverage. Gate evaluations exercise read-only access and the review action/persistence lifecycle; periodic evaluations cover ranking, PR overlap, and live Codex behavior.
 - Coverage evaluations now recognize complete combined source reads and explicit diagram legends while retaining checks for source ownership, missing output, and contradictory evidence.
+- First-question evaluations capture the displayed native question with a restricted tool set. SDK captures report provider failures directly and reject partial or stale output. Interactive evaluation captures are retained when an output directory is configured, including local runs without a named run ID.
 
 ## [1.87.5.0] - 2026-09-17
 
