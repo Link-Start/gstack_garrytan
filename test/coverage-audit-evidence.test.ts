@@ -28,6 +28,55 @@ const verdict = (s:ReturnType<typeof synthetic>) => coverageAuditVerdict(s.resul
 const block = (s:ReturnType<typeof synthetic>,i:number) => s.result.transcript[i].message.content[0];
 
 describe('coverage audit native evidence',()=>{
+  test('literal cat operands preserve quoted whitespace for single and multiple owned paths', () => {
+    for (const quote of ["'", '"']) for (const flags of ['', '-n ', '-n -- ']) {
+      const s = synthetic();
+      s.files.cwd = '/repo with space';
+      s.files.source.path = s.files.cwd + '/src/billing source.ts';
+      s.files.tests.path = s.files.cwd + '/test/billing test.ts';
+      s.result.transcript[0].cwd = s.files.cwd;
+      for (const [i, file] of [[1, s.files.source], [3, s.files.tests]] as const) {
+        Object.assign(block(s, i), { name: 'Bash', input: { command: `cat ${flags}${quote}${file.path}${quote}` } });
+      }
+      expect(verdict(s)).toMatchObject({ sourceRead: true, testsRead: true });
+      block(s, 1).input.command = `cat ${flags}${quote}${s.files.source.path}${quote} ${quote}${s.files.tests.path}${quote}`;
+      block(s, 2).content = s.files.source.content + '\n' + s.files.tests.content;
+      s.result.transcript.splice(3);
+      expect(verdict(s)).toMatchObject({ sourceRead: true, testsRead: true });
+      for (const operands of [
+        `${quote}${s.files.source.path}${quote}suffix`,
+        `${quote}${s.files.source.path}${quote}${quote}${s.files.tests.path}${quote}`,
+        `${quote}${s.files.source.path}`, '"$SOURCE_FILE"', '`cat path`',
+      ]) {
+        block(s, 1).input.command = `cat ${flags}${operands}`;
+        expect(verdict(s), operands).toMatchObject({ sourceRead: false, testsRead: false });
+      }
+    }
+  });
+
+  test('single word legend entries consume complete unqualified coverage and quality clauses', () => {
+    const s = synthetic();
+    const output = (legend: string) => '```text\nprocessPayment()\n└─ happy path [OK]\nrefundPayment()\n└─ happy path [GAP]\n' + legend + '\n```';
+    for (const legend of [
+      'Legend: [OK] covered\nLegend: [GAP] no test',
+      'Legend: ★★★ edges + errors  ★★ happy path only  ★ smoke  [OK] tested\nLegend: [GAP] no test  [→E2E] recommend integration test',
+    ]) {
+      s.result.output = output(legend);
+      expect(verdict(s).diagram, legend).toBe(true);
+      for (const qualified of [
+        legend.replace('[OK] covered', '[OK] covered only if approved').replace('[OK] tested', '[OK] tested only if approved'),
+        legend.replace('[GAP] no test', '[GAP] no test except refunds'),
+        legend.replace('[GAP] no test', '[GAP] no test unless approved'),
+        legend.replace('[GAP] no test', 'hypothetical [GAP] no test'),
+        legend.replace('[OK]', 'not [OK]'),
+        legend + ' unknown qualifier',
+      ]) {
+        s.result.output = output(qualified);
+        expect(verdict(s).diagram, qualified).toBe(false);
+      }
+    }
+  });
+
   test('all four exact completed public attempts delivered both files and the seeded diagram',()=>{
     expect(fixture.provenance.actualPassedCases).toBe(0);
     for(const row of fixture.rows){

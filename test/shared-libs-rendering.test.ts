@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { ALL_HOST_CONFIGS } from '../hosts';
 import { discoverTemplates } from '../scripts/discover-skills';
+import { sharedLibsPlanExcerpt } from './helpers/shared-libs-plan-excerpt';
 
 const ROOT = resolve(import.meta.dir, '..');
 let output: string;
@@ -89,6 +90,48 @@ describe('shared-code skill distribution', () => {
     expect(review).toContain('sharedLibsFingerprint');
     expect(review).toContain('advisory');
     expect(review).toContain('ASK');
+  });
+
+  test('the bounded plan fixture includes the generated decision prerequisites before Code Quality', () => {
+    const entrypoint = readFileSync(join(output, 'plan-eng-review/SKILL.md'), 'utf8');
+    const review = readFileSync(join(output, 'plan-eng-review/sections/review-sections.md'), 'utf8');
+    const excerpt = sharedLibsPlanExcerpt(entrypoint, review);
+    const headings = ['## AskUserQuestion Format', '## My engineering preferences',
+      '## Review record and write policy', '**Plan-review evidence:**',
+      '## Confidence Calibration', '## Decision procedure',
+      '### 1. Establish current state', '### 2. Separate independent choices',
+      '### 3. Compare one choice', '### 4. Save the pending record',
+      '### 5. Ask and wait', '### 6. Apply and refresh',
+      '### 2. Code quality review', '### Shared-code evaluation rubric', '**Blocked outcome:**'];
+    const positions = headings.map(heading => excerpt.indexOf(heading));
+    expect(positions.every(index => index >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+    expect(excerpt.match(/^## Decision procedure$/gm)).toHaveLength(1);
+    expect(excerpt).toContain('AskUserQuestion({ questions: [currentDecision] })');
+    expect(excerpt).toContain('D-numbering: exclude the initial target menu');
+    expect(excerpt).toContain('**Check each artifact and parent directory\'s permission before writing.**');
+    expect(excerpt).toContain('Check the Write/Edit result, then use Read to fetch the entire saved record.');
+    expect(excerpt).toContain('Check the save result, then Read the entire resolution block, including State.');
+    expect(excerpt).toContain('Only an engineering-plan review may use proposed callers');
+    expect(excerpt).not.toMatch(/^## (?:Scope Challenge|Outside Voice|Required outputs)/m);
+    expect(excerpt).not.toMatch(/^### [134]\. (?:Architecture|Test|Performance) review/m);
+    expect(excerpt).not.toContain('gstack-skill-start --');
+
+    // Exact source slices preserve the complete native brief and decision loop.
+    for (const [source, start, end] of [
+      [entrypoint, '## AskUserQuestion Format', '## Artifacts Sync'],
+      [review, '## Review record and write policy', '## Prior Learnings'],
+      [review, '## Decision procedure', '## Scope Challenge'],
+      [review, '### 2. Code quality review', '### 3. Test review'],
+    ]) expect(excerpt).toContain(source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start))));
+
+    for (const [source, marker] of [[entrypoint, '## AskUserQuestion Format'],
+      [review, '## Review record and write policy'], [review, '## Decision procedure'],
+      [review, '## Scope Challenge']] as const) {
+      const damaged = source.replace(marker, '## Missing prerequisite');
+      expect(() => sharedLibsPlanExcerpt(source === entrypoint ? damaged : entrypoint,
+        source === review ? damaged : review)).toThrow(/marker not found/);
+    }
   });
 
   test('standalone catalog entry adds exactly the approved 82 bytes', () => {

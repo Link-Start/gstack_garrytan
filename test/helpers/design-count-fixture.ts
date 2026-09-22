@@ -19,6 +19,12 @@ export const designCountExistingInteractionStates = [
   'and Cancel navigates back immediately without a confirmation. When dirty',
   'and idle, Reset and Cancel use their existing discard confirmations. Their',
   '44px geometry is unchanged; the disabled style is separate from pending feedback.',
+  'The existing ErrorSummary mounts in the status/error area below the action',
+  'group and above Profile. It links each invalid field; focus goes to the first',
+  'invalid field and the summary is not a second live region. Preserve that slot.',
+  'The existing error/Retry row is inline above 640px with an 8px gap. At 640px',
+  'and below, Retry wraps below the text as a full-width 44px ghost button,',
+  'outside the live region; long errors fit 320px without horizontal scroll.',
   // The September 20 retry correctly surfaced these three missing contracts
   // in addition to the five seeded visual gaps. They belong to the existing UI.
   'The existing operation-specific network error copy is:',
@@ -30,6 +36,6 @@ export const designCountExistingInteractionStates = [
   'A clean Save is a no-op: no request, validation, pending state, timestamp, status, or focus change.',
   'Only a dirty Save sends the existing atomic request.',
   'The existing Export filename is account-settings-YYYY-MM-DD.json, using the user’s local calendar date',
-  'at export activation and no account name or email. Repeated same-day exports keep the browser’s normal collision suffix',
+  'at export activation and no account identifiers, including no account name or email. Repeated same-day exports keep the browser’s normal collision suffix',
   '(for example, “ (1)”); the application does not overwrite an earlier download.',
 ];

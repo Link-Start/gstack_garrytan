@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
-  createSharedLibsFixture, fixtureGit, fixtureWrite, installSourceShims,
+  createSharedInteractiveToolHandler, createSharedLibsFixture, fixtureGit, fixtureWrite, installSourceShims,
   readRequests, seedOpportunitySources, sharedReadOnlyViolations, shellQuote, snapshotFixture, type SharedLibsFixture,
 } from './helpers/shared-libs-eval-fixture';
 import { E2E_TOUCHFILES, GLOBAL_TOUCHFILES, selectTests } from './helpers/touchfiles';
@@ -20,6 +20,40 @@ function scratch(): string {
   cleanup.push(directory);
   return directory;
 }
+
+describe('shared-code legacy interactive actor', () => {
+  for (const [choose, labels] of [['approve', ['Fix it', 'Apply remedy', 'Approve', 'Extract helper', 'Reuse library', 'Choice (recommended)']],
+    ['skip', ['Skip', 'Keep current', 'Decline', 'Do not change', 'Leave as-is']]] as const) {
+    test.each(labels)(`${choose} retains existing first-match answers: %s`, async label => {
+      const questions: unknown[] = [], answers: unknown[] = [];
+      const callback = createSharedInteractiveToolHandler(choose, {
+        nonQuestion: (_name, input) => ({ behavior: 'allow', updatedInput: input }),
+        onQuestion: input => { questions.push(input); },
+        onAnswer: (input, answer) => { answers.push({ input, answer }); },
+      });
+      const input = { questions: [1, 2].map(id => ({ question: `Choice ${id}`, header: 'Choice',
+        options: [{ label: 'Investigate', description: 'First' }, { label, description: 'Second' },
+          { label: `${label} later`, description: 'Third' }] })) };
+      expect(await callback('AskUserQuestion', input)).toEqual({ behavior: 'allow', updatedInput: { ...input,
+        answers: { 'Choice 1': label, 'Choice 2': label } } });
+      expect(questions).toEqual([input]);
+      expect(answers).toHaveLength(1);
+    });
+  }
+
+  test('non-question permissions pass through, and absent legacy choices still throw', async () => {
+    const calls: unknown[] = [];
+    const callback = createSharedInteractiveToolHandler('approve', {
+      nonQuestion: (name, input) => { calls.push({ name, input }); return { behavior: 'allow', updatedInput: input }; },
+      onQuestion: () => {}, onAnswer: () => { throw new Error('unexpected answer'); },
+    });
+    const read = { file_path: '/fixture/PLAN.md' };
+    expect(await callback('Read', read)).toEqual({ behavior: 'allow', updatedInput: read });
+    expect(calls).toEqual([{ name: 'Read', input: read }]);
+    await expect(callback('AskUserQuestion', { questions: [{ question: 'Unknown', options: [{ label: 'Investigate' }] }] }))
+      .rejects.toThrow('No approve option in real review question');
+  });
+});
 
 describe('shared-code fixture snapshots', () => {
   test('empty-directory creation/deletion and root or descendant mode changes are visible', () => {

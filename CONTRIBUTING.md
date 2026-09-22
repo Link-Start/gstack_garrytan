@@ -179,10 +179,61 @@ Bun auto-loads `.env` — no extra config. Conductor workspaces inherit `.env` f
 | 2+3 | `bun run test:evals` | ~$4 combined | E2E + LLM-as-judge (runs both) |
 
 ```bash
-bun run test                 # Tier 1 only (run before every commit, ~90-100s for the full ~8,700-test suite)
+bun run test:quick           # Measured fast free subset for ordinary edits; not full acceptance
+bun run eval:bg:pr           # Changed fast live probes + selected quality judges, detached
+bun run test                 # Final full free acceptance after focused repairs and source freeze
 bun run test:e2e             # Tier 2: E2E only (needs EVALS=1, can't run inside Claude Code)
 bun run test:evals           # Tier 2 + 3 combined (~$4.35/run)
 ```
+
+The PR paid gate uses an explicit short behavioral profile. Every selected quality
+judge remains included; the manifest lists deferred behaviors separately from
+passes. Unknown source dependencies restore the full gate. A new prompt without
+registered coverage fails planning. Known broad behaviors remain visibly deferred
+when their prompts change; they do not silently gain PR-pass credit. The full
+gate and periodic censuses run fresh weekly and on manual
+dispatch of `evals-periodic.yml`; `bun run eval:bg:release` runs both locally.
+Some broad behavioral failures will therefore be found after the PR gate.
+
+CI enables verified first-attempt reuse for the 14 workflow quality judges for
+24 hours within the same PR. The other 11 quality cases and all dynamic agent
+cases stay fresh. Local runs stay fresh unless the complete scoped cache and
+runtime configuration is supplied. The key includes complete prompt bytes, generated inputs,
+fixtures, runner/rubric code, installed dependencies, model settings and runtime.
+The current assertions validate a reused score again. Records retain the original
+run, revision and time; reuse never renews that time. Failed, retried, partial or
+unknown-input results cannot be reused.
+`EVALS_FRESH=1` bypasses reuse; periodic and release runs always bypass it.
+
+Timing goals are under one minute for edit feedback, 3–5 minutes for typical PR
+checks, and 60–90 seconds for complete free test execution across isolated CI
+machines. They are targets, not timeout reductions or guarantees. The complete
+local suite keeps six workers and currently takes roughly 4–5 minutes; use
+`test:quick` for the shorter edit loop. CI setup, build and queue time are reported
+separately. Refresh measurements with `bun run test:free --record-durations`;
+the required free CI lane packs the complete inventory across isolated runners,
+then checks every shard's receipt before reporting success. Local worker counts
+remain bounded to avoid browser/process contention.
+
+Measurements from this PR on 2026-09-21:
+
+| Run | Coverage | Elapsed |
+|---|---|---|
+| Local edit feedback | 861 of 993 free test files | 38 seconds |
+| Local complete free suite | All 993 files, six workers | 4m 35s |
+| Complete Linux CI | All 993 files, 20 isolated runners | 1m 40s across test steps; 3m 7s including setup and aggregation |
+
+The [Linux CI run](https://github.com/garrytan/gstack/actions/runs/35642667809)
+on `25030d68` included one recorded successful retry. Its slowest test step was 77 seconds;
+staggered starts made the complete test span longer. Typical PR paid-gate timing
+still needs measurement on a small change; test-runner changes use the full fallback.
+
+Follow [Validation discipline in AGENTS.md](AGENTS.md#validation-discipline):
+reproduce known failures with focused checks, verify adjacent source and
+generation contracts, then run the affected and remaining required selected
+evaluations. Finish review fixes and release preparation before running the
+full free suite once on the frozen code. During repairs, focused checks replace
+a full-suite run before every commit.
 
 ### Tier 1: Static validation (free)
 
@@ -328,7 +379,7 @@ Each dimension is scored 1-5. Threshold: every dimension must score **≥ 4**. T
 
 ### CI
 
-A GitHub Action (`.github/workflows/skill-docs.yml`) runs `bun run gen:skill-docs --dry-run` on every push and PR. If the generated SKILL.md files differ from what's committed, CI fails. This catches stale docs before they merge.
+A GitHub Action (`.github/workflows/skill-docs.yml`) generates all hosts on pushes to main and on PRs, then rejects tracked differences and nonignored untracked output. Generation errors also fail the job. Optional ignored host caches are not compared against Git.
 
 Supply-chain gates run alongside it:
 
@@ -358,6 +409,13 @@ bun run skill:check
 # Or use watch mode — auto-regenerates on save
 bun run dev:skill
 ```
+
+`skill:check` renders all hosts into temporary storage using canonical content
+paths and host defaults, validates the complete generated content, and compares
+expected tracked artifacts against the checkout. Missing, changed, or nonignored
+untracked output fails. Local ignored host caches, including symlinked caches,
+are left untouched; the checker works without them. A generation failure cannot
+produce a successful check of partial output.
 
 For template authoring best practices (natural language over bash-isms, dynamic branch detection, `{{BASE_BRANCH_DETECT}}` usage), see CLAUDE.md's "Writing SKILL templates" section.
 

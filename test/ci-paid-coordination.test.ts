@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { buildRunManifest, collectPaidTestFiles, type PaidRunManifest, type SliceResult } from '../scripts/test-paid-shards';
+import { STRICT_RETRY_CASE_BUDGETS } from './helpers/eval-budgets';
 
 const ROOT = path.resolve(import.meta.dir, '..');
 type Step = { uses?: string; run?: string; if?: string; with?: Record<string, unknown> };
@@ -147,7 +148,9 @@ describe('dependency-free CI planner and report execution', () => {
         const result: SliceResult = {
           version: 1, tier, sliceIndex, sliceCount,
           outcomes: manifest.entries.filter(entry => entry.status === 'planned' && entry.slice === sliceIndex).map(entry => ({
-            files: [entry.file], status: 'passed', exitCode: 0, elapsedMs: 1, executedTests: 1, skippedTests: 0,
+            files: [entry.file], status: 'passed', exitCode: 0, elapsedMs: 1,
+            executedTests: STRICT_RETRY_CASE_BUDGETS.find(budget => budget.file === entry.file)?.cases ?? 1,
+            skippedTests: 0,
             ...(entry.budget ? { budget: entry.budget } : {}),
           })),
         };
@@ -169,9 +172,20 @@ describe('dependency-free CI planner and report execution', () => {
       failed.outcomes[0].status = 'failed';
       failed.outcomes[0].exitCode = 1;
       fs.writeFileSync(lastSlice, JSON.stringify(failed));
+      fs.writeFileSync(path.join(reportDir, 'retry-results.json'), JSON.stringify({
+        tests: [
+          { name: 'recovered', passed: false }, { name: 'recovered', passed: true },
+          { name: 'exhausted', passed: false }, { name: 'exhausted', passed: false },
+          { name: 'regressed', passed: true }, { name: 'regressed', passed: false },
+        ],
+        flaky_retries: ['recovered', 'exhausted', 'regressed'].map(name => ({ name, attempts: 2 })),
+      }));
       const red = run(['--report', reportDir], tier);
       expect(red.status).toBe(1);
       expect(red.stderr).toContain(`${failed.outcomes[0].files[0]}: failed`);
+      expect(red.stdout).toContain('3 executed, 0 reused; 1 passed, 2 failed (6 attempt records from 1 collectors)');
+      expect(red.stdout).toContain('3 cases with multiple attempts this run:');
+      expect(red.stdout).not.toMatch(/passed only on retry|not blocking/);
 
       fs.writeFileSync(manifestPath, '{');
       const corrupt = run(['--report', reportDir], tier);

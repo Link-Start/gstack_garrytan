@@ -97,10 +97,29 @@ function readsFile(command: unknown, file: string, cwd: string, output: unknown,
   // file, or leave a printed old command mistaken for an executed read.
   if (parts.some(p => /^(?:cd|pushd|popd|source|\.|eval|exec|exit|return|function|alias|if|then|else|for|while|until|case)\s/.test(p) ||
       /^(?:exit|return|fi|done)$/.test(p) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(p))) return false;
-  const readTarget = (p: string): string | undefined => {
+  const readTargets = (p: string): string[] => {
     const cat = /^cat(?:\s+-n)?(?:\s+--)?\s+(.+)$/.exec(p);
+    if (cat) {
+      // Whitespace separates whole literal operands, never the inside of a
+      // quoted path. Consume every byte; concatenation/expansion is unsupported.
+      const targets: string[] = [];
+      let remaining = cat[1]!.trim();
+      while (remaining) {
+        const token = /^('[^']*'|"[^"$`\\]*"|[^\s'"$`\\;|&<>]+)(?:\s+|$)/.exec(remaining);
+        const target = token && literal(token[1]!);
+        if (!target) return [];
+        targets.push(target);
+        remaining = remaining.slice(token![0].length);
+      }
+      return targets;
+    }
     const sed = /^sed\s+-n\s+(?:'\d+(?:,\d+)?p'|"\d+(?:,\d+)?p"|\d+(?:,\d+)?p)\s+(.+)$/.exec(p);
-    return literal((cat ?? sed)?.[1] ?? '');
+    const sedTarget = literal(sed?.[1] ?? '');
+    return sedTarget ? [sedTarget] : [];
+  };
+  const readTarget = (p: string): string | undefined => {
+    const targets = readTargets(p);
+    return targets.length === 1 ? targets[0] : undefined;
   };
   // Unrelated reads may precede/follow a delivered file. They cannot mutate it
   // or print replacement content through another interpreter. Only discarded
@@ -109,7 +128,7 @@ function readsFile(command: unknown, file: string, cwd: string, output: unknown,
     // A neighboring optional file read may report absence. It never receives
     // source/test delivery credit; only earlier independent cat/sed segments do.
     const fallback = /^(cat(?:\s+-n)?(?:\s+--)?\s+.+)\s+2>\/dev\/null\s+\|\|\s+echo\s+(.+)$/.exec(part);
-    if (fallback) return readTarget(fallback[1]!) !== undefined && literal(fallback[2]!) !== undefined && !part.includes('\\');
+    if (fallback) return readTargets(fallback[1]!).length > 0 && literal(fallback[2]!) !== undefined && !part.includes('\\');
     const stages: string[] = [];
     let value = '', quoted = '';
     for (const char of part) {
@@ -146,7 +165,7 @@ function readsFile(command: unknown, file: string, cwd: string, output: unknown,
         token === (git[1] === 'log' ? '--oneline' : '--stat') ||
         (git[1] === 'log' && /^-[1-9]\d{0,4}$/.test(token)) || /^[A-Za-z0-9_][A-Za-z0-9_./~^-]*$/.test(token)));
       return /^(?:cat|grep|head|ls|echo)(?:\s|$)/.test(stage) || stage === 'pwd' || stage === 'wc -l' || stage === 'git ls-files' || stage === "sed 's/^/TESTFILES:/'" || /^\[ -f [A-Za-z0-9_.\/-]+ \]$/.test(stage) ||
-        readTarget(stage) !== undefined || gitDisplay || displayAwk;
+        readTargets(stage).length > 0 || gitDisplay || displayAwk;
     });
   };
   if (parts.some(p => p && !readOnly(p))) return false;
@@ -155,7 +174,7 @@ function readsFile(command: unknown, file: string, cwd: string, output: unknown,
   const andDisplay = (p: string) => {
     if (p === 'echo' || /^echo\s+[-=]+$/.test(p) || /^echo [-=]{2,} [A-Za-z0-9_.\/-]+ [-=]{2,}$/.test(p)) return true;
     const caption = /^echo\s+(.+)$/.exec(p), value = caption && literal(caption[1]!);
-    if (value && /^[-=]{2,}\s+[A-Za-z0-9_][A-Za-z0-9_./-]*(?:\s+(?:vs|and)\s+[A-Za-z0-9_][A-Za-z0-9_./-]*)?\s+[-=]{2,}$/.test(value)) return true;
+    if (value && /^[-=]{2,}(?:\s*[A-Za-z0-9_][A-Za-z0-9_./-]*(?:\s+(?:vs|and)\s+[A-Za-z0-9_][A-Za-z0-9_./-]*)?\s*)?[-=]{2,}$/.test(value)) return true;
     return /^git\s+diff(?:\s+[A-Za-z0-9_][A-Za-z0-9_./~^-]*)?\s+--stat$/.test(p) ||
       /^git\s+log\s+--oneline\s+[A-Za-z0-9_][A-Za-z0-9_./~^-]*$/.test(p);
   };
@@ -166,10 +185,14 @@ function readsFile(command: unknown, file: string, cwd: string, output: unknown,
     // reads in the initial && chain and their exact ordered stdout prefix.
     const prefix: string[] = [], readPaths: string[] = [];
     for (let i = 0; i < parts.length && (i === 0 || separators[i - 1] === '&&'); i++) {
-      const segment = parts[i]!, target = readTarget(segment);
-      const known = target && [owned.source, owned.tests].find(f => path.resolve(cwd, target) === f.path);
-      if (known && /^cat -n /.test(segment) && !readPaths.includes(known.path)) {
-        readPaths.push(known.path); prefix.push(known.content.replace(/\r\n?/g, '\n').replace(/\n$/, ''));
+      const segment = parts[i]!, targets = readTargets(segment);
+      const known = targets
+        .map(target => [owned.source, owned.tests].find(f => path.resolve(cwd, target) === f.path))
+        .filter((file): file is CoverageAuditFiles['source'] => Boolean(file));
+      if (known.length > 0 && /^cat -n /.test(segment) && known.every(file => !readPaths.includes(file.path))) {
+        for (const file of known) {
+          readPaths.push(file.path); prefix.push(file.content.replace(/\r\n?/g, '\n').replace(/\n$/, ''));
+        }
       } else if (andDisplay(segment) && /^echo(?: |$)/.test(segment)) {
         const value = segment.slice(5); prefix.push(literal(value) ?? value);
       } else return false;
@@ -180,10 +203,9 @@ function readsFile(command: unknown, file: string, cwd: string, output: unknown,
     return readPaths.length === 2 && readPaths.includes(file) && actual.length <= 4 * 1024 * 1024 &&
       (deliveredPrefix === expected || deliveredPrefix.startsWith(expected + '\n'));
   }
-  if (andList && parts.some(p => readTarget(p) === undefined && !andDisplay(p))) return false;
+  if (andList && parts.some(p => readTargets(p).length === 0 && !andDisplay(p))) return false;
   return parts.some(p => {
-    const target = readTarget(p);
-    return target !== undefined && path.resolve(cwd, target) === file;
+    return readTargets(p).some(target => path.resolve(cwd, target) === file);
   });
 }
 function delivered(output: unknown, expected: string): boolean {
@@ -318,10 +340,19 @@ function diagramWordLegend(lines: string[]): Map<string, boolean> | undefined {
   const meanings = new Map<string, boolean>();
   const pair = String.raw`\[\s*(OK|GAP)\s*\]\s+(covered|tested|no test|untested)`;
   const form = new RegExp(String.raw`^\s*Legend:?\s+${pair}(?:\s+[|,;]?\s*|[|,;]\s*)${pair}\s*$`, 'i');
+  // A single coverage key may coexist with the documented quality keys.
+  // Consume those complete clauses too: an extracted status inside arbitrary
+  // qualifiers cannot define an unconditional coverage meaning.
+  const separator = String.raw`(?:\s+[|,;]?\s*|[|,;]\s*)`;
+  const quality = String.raw`(?:★★★\s+(?:edges\s*\+\s*errors|behavior\s*\+\s*edge\s*\+\s*error)|★★\s+happy path(?: only)?|★\s+smoke(?: check)?|\[→E2E\]\s+(?:(?:recommend|needs)\s+)?integration test)`;
+  const single = new RegExp(String.raw`^\s*Legend:?\s+(?:${quality}${separator})*${pair}(?:${separator}${quality})*\s*$`, 'i');
   for (const line of declarations) {
     const match = form.exec(line);
-    if (!match || match[1]!.toUpperCase() === match[3]!.toUpperCase()) return new Map();
-    for (const [name, description] of [[match[1]!, match[2]!], [match[3]!, match[4]!]]) {
+    const singleMatch = !match && single.exec(line);
+    if ((!match && !singleMatch) || (match && match[1]!.toUpperCase() === match[3]!.toUpperCase())) return new Map();
+    const entries = match ? [[match[1]!, match[2]!], [match[3]!, match[4]!]]
+      : [[singleMatch![1]!, singleMatch![2]!]];
+    for (const [name, description] of entries) {
       const key = name.toUpperCase(), covered = /^(?:covered|tested)$/i.test(description);
       if ((key === 'OK') !== covered || (meanings.has(key) && meanings.get(key) !== covered)) return new Map();
       meanings.set(key, covered);

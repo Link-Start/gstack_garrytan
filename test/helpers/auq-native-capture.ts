@@ -132,7 +132,10 @@ function clippedElidedNativeAuqIdentity(screen: string, call: NativePlanQuestion
   const rows = before.split('\n');
   // Only the actual viewport's boxed question body qualifies. Do not strip a
   // foreign header, quoted output, or prose prefix to manufacture a match.
-  if (rows.length < 2 || rows.some(row => !/^[ \t]*[│┃](?: |$)/.test(row)) || /[☐□❯]/.test(before)) return undefined;
+  if (rows.length < 2 || !/^[ \t]*[│┃](?: |$)/.test(rows[0]!) || /[☐□❯]/.test(before)) return undefined;
+  // Once the clipped boxed body starts, every interior row belongs to it.
+  // Counting may normalize blank rows; capture cannot discard that contradiction.
+  if (rows.some(row => !/^[ \t]*[│┃](?: |$)/.test(row))) return {indices:[],packetBar:!!bar};
   const body = rows.map(row => row.replace(/^[ \t]*[│┃] ?/,'')).join('\n').trimEnd();
   if (!body.endsWith('…')) return undefined;
   const compact = (value: string) => value.replace(/\s+/g,'');
@@ -172,8 +175,8 @@ function clippedElidedNativeAuqIdentity(screen: string, call: NativePlanQuestion
   return {indices:matches,packetBar:!!bar};
 }
 
-/** Project only a verified complete native body out of its UI box framing. */
-function unboxCompleteNativeAuqBody(screen: string, call: NativePlanQuestionCall): string | undefined {
+/** Project a verified complete body; null rejects contradictory boxed evidence. */
+function unboxCompleteNativeAuqBody(screen: string, call: NativePlanQuestionCall): string | null | undefined {
   // Packets already have their own body projection and unique-tab matching.
   // A singleton header must never provide a new route into a packet.
   if (call.questions.length !== 1) return undefined;
@@ -185,29 +188,31 @@ function unboxCompleteNativeAuqBody(screen: string, call: NativePlanQuestionCall
   if (!header) return undefined;
   const compact=(value:string)=>value.replace(/\s+/g,'');
   const question=call.questions[0]!;
-  if (compact(header[1]!)!==compact(question.header)) return undefined;
+  const bodyStart=header.index+header[0].length;
+  const bodySpan=before.slice(bodyStart);
+  const rows=bodySpan.replace(/^(?:[ \t]*\n)+/,'').trimEnd().split('\n');
+  if (!/^[ \t]*[│┃](?: |$)/.test(rows[0]!)) return undefined;
+  if (compact(header[1]!)!==compact(question.header) || rows.some(row=>!/^[ \t]*[│┃](?: |$)/.test(row))) return null;
+  // A complete boxed pane must pass this capture-specific check before the
+  // broader counting parser. Only a genuinely elided body uses its other route.
+  const body=rows.map(row=>row.replace(/^[ \t]*[│┃] ?/,'')).join('\n');
+  if (!compact(body) || compact(body)!==compact(question.question)) return body.endsWith('…') ? undefined : null;
   // Ordinary prior public output is outside the pane only when separated by
   // the native horizontal rule. A quoted/fenced pane is not display evidence.
   const prefix=before.slice(0,header.index).trimEnd();
   if (prefix && (!/^[─━]{20,}$/.test(prefix.split('\n').at(-1)!) ||
-      /(?:^|\n)[ \t]*(?:>|```)/.test(prefix))) return undefined;
-  const bodyStart=header.index+header[0].length;
-  const bodySpan=before.slice(bodyStart);
-  const rows=bodySpan.replace(/^(?:[ \t]*\n)+/,'').trimEnd().split('\n');
-  if (rows.some(row=>!/^[ \t]*[│┃](?: |$)/.test(row))) return undefined;
+      /(?:^|\n)[ \t]*(?:>|```)/.test(prefix))) return null;
   // Strip exactly one framing prefix, preserving literal box characters in
   // the actual question. No size threshold: malformed short briefs need grades.
-  const body=rows.map(row=>row.replace(/^[ \t]*[│┃] ?/,'')).join('\n');
-  if (!compact(body) || compact(body)!==compact(question.question)) return undefined;
   const menu=visible.slice(cursor.index);
-  if (!/(?:^|\n)Enter\s*to\s*select\s*·\s*↑\/↓\s*to\s*navigate\s*·\s*(?:n\s*to\s*add\s*notes\s*·\s*)?Esc\s*to\s*cancel[\s│┃─━└┘]*$/.test(menu)) return undefined;
+  if (!/(?:^|\n)Enter\s*to\s*select\s*·\s*↑\/↓\s*to\s*navigate\s*·\s*(?:n\s*to\s*add\s*notes\s*·\s*)?Esc\s*to\s*cancel[\s│┃─━└┘]*$/.test(menu)) return null;
   const options=[...menu.matchAll(/^[ \t]{0,3}(?:❯[ \t]*)?([0-9]+)\.[ \t]*(.*)$/gm)]
     .map(match=>({index:Number(match[1]),label:match[2]!}));
   const offered=options.slice(0,question.options.length), controls=options.slice(question.options.length);
   if (offered.length!==question.options.length || offered.some((option,index)=>option.index!==index+1 || !option.label.trim()) ||
       controls.length>2 || controls.some((option,index)=>option.index!==question.options.length+index+1 ||
         !(index===0?/^Typesomething\.?$/:/^Chataboutthis$/).test(compact(option.label))) ||
-      !nativeOptionLabelsAgree(visible,question)) return undefined;
+      !nativeOptionLabelsAgree(visible,question)) return null;
   return visible.slice(0,bodyStart)+bodySpan.replace(/^[ \t]*[│┃] ?/gm,'')+visible.slice(cursor.index);
 }
 
@@ -220,11 +225,9 @@ export function displayedNativeAuq(screen: string, call: NativePlanQuestionCall 
   // Question identity must be unique across complete and elided body routes;
   // an early shared match must not bypass a contradictory second candidate.
   if (clipped && !uniqueFirst) return undefined;
-  let matched = capturePlanCountQuestion(screen, new Set(), 0, false, call);
-  if (!matched?.nativeCall) {
-    const unboxed=unboxCompleteNativeAuqBody(screen,call);
-    if (unboxed!==undefined) matched=capturePlanCountQuestion(unboxed,new Set(),0,false,call);
-  }
+  const unboxed=unboxCompleteNativeAuqBody(screen,call);
+  if (unboxed===null) return undefined;
+  const matched = capturePlanCountQuestion(unboxed ?? screen, new Set(), 0, false, call);
   // Never use the screen-only fallback. The additional native-only branch
   // proves the observed combined clipping mode from this same owned payload.
   // A visible tab bar keeps its existing route; its parsed body above is only

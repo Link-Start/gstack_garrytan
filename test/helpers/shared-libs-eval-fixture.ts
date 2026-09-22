@@ -688,8 +688,44 @@ export async function runSharedCapture(f: SharedLibsFixture, testName: string, p
   return Object.assign(result, { providerRequests: readRequests(f) });
 }
 
+export type SharedQuestionSelector = (input: Record<string, unknown>) => Record<string, string>;
+
+/** The SDK registers this callback directly; free tests exercise the same answer boundary. */
+export function createSharedInteractiveToolHandler(choose: 'approve' | 'skip' | SharedQuestionSelector, hooks: {
+  nonQuestion: (name: string, input: Record<string, unknown>) => any;
+  onQuestion: (input: Record<string, unknown>) => void;
+  onAnswer: (input: Record<string, unknown>, answers: Record<string, string>) => void;
+  onRefusal?: (error: Error) => void;
+}) {
+  return async (name: string, input: Record<string, unknown>) => {
+    if (name !== 'AskUserQuestion') return hooks.nonQuestion(name, input);
+    hooks.onQuestion(input);
+    let answers: Record<string, string> = {};
+    if (typeof choose === 'function') {
+      try { answers = choose(input); }
+      catch (cause) {
+        const error = cause instanceof Error ? cause : new Error(String(cause));
+        hooks.onRefusal?.(error);
+        throw error;
+      }
+    }
+    if (typeof choose !== 'function') {
+      for (const question of (input.questions as any[]) || []) {
+        const options = question.options || [];
+        const selected = options.find((option: any) => choose === 'skip'
+          ? /skip|keep|decline|do not|leave/i.test(option.label)
+          : /fix|apply|approve|extract|reuse|recommended/i.test(option.label));
+        if (!selected) throw new Error(`No ${choose} option in real review question: ${JSON.stringify(question)}`);
+        answers[question.question] = selected.label;
+      }
+    }
+    hooks.onAnswer(input, answers);
+    return { behavior: 'allow' as const, updatedInput: { ...input, answers } };
+  };
+}
+
 /** A real SDK capture supplies actual AskUserQuestion answers; no response/decision prose is forged. */
-export async function runSharedInteractive(f: SharedLibsFixture, testName: string, prompt: string, choose: 'approve' | 'skip') {
+export async function runSharedInteractive(f: SharedLibsFixture, testName: string, prompt: string, choose: 'approve' | 'skip' | SharedQuestionSelector) {
   // Keep the real review fetch step hermetic while preserving all actual local Git/record operations.
   installSourceShims(f);
   const { runAgentSdkTest, passThroughNonAskUserQuestion, resolveClaudeBinary } = await import('./agent-sdk-runner');
@@ -697,6 +733,7 @@ export async function runSharedInteractive(f: SharedLibsFixture, testName: strin
   const { CAPTURE_MS } = await import('./eval-budgets');
   const abortController = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let actorFailure: Error | undefined;
   let captureStartedAt = 0;
   const streamed: any[] = [];
   const diagnosticDirectory = path.join(SHARED_LIBS_ROOT, '.context/shared-libs-captures');
@@ -732,22 +769,18 @@ export async function runSharedInteractive(f: SharedLibsFixture, testName: strin
           },
         });
       },
-      canUseTool: async (name, input) => {
-        if (name !== 'AskUserQuestion') return passThroughNonAskUserQuestion(name, input);
-        questions.push(input);
-        const answers: Record<string, string> = {};
-        for (const question of (input.questions as any[]) || []) {
-          const options = question.options || [];
-          const selected = options.find((option: any) => choose === 'skip'
-            ? /skip|keep|decline|do not|leave/i.test(option.label)
-            : /fix|apply|approve|extract|reuse|recommended/i.test(option.label));
-          if (!selected) throw new Error(`No ${choose} option in real review question: ${JSON.stringify(question)}`);
-          answers[question.question] = selected.label;
-        }
-        fs.appendFileSync(diagnostic, JSON.stringify({ type: 'fixture_answer', input, answers }) + '\n');
-        return { behavior: 'allow', updatedInput: { ...input, answers } };
-      },
+      canUseTool: createSharedInteractiveToolHandler(choose, {
+        nonQuestion: passThroughNonAskUserQuestion,
+        onQuestion: input => { questions.push(input); },
+        onAnswer: (input, answers) => {
+          fs.appendFileSync(diagnostic, JSON.stringify({ type: 'fixture_answer', input, answers }) + '\n');
+        },
+        onRefusal: error => { actorFailure = error; abortController.abort(); },
+      }),
     });
+    // The SDK converts callback throws to tool-control errors. Refusal must fail
+    // the fixture even if the model recovers and returns a nominal success.
+    if (actorFailure) throw actorFailure;
     return { result: Object.assign(result, {
       providerRequests: readRequests(f),
       costKnown: streamed.some(event => event.type === 'result' && typeof event.total_cost_usd === 'number'),
@@ -760,16 +793,16 @@ export async function runSharedInteractive(f: SharedLibsFixture, testName: strin
       events: streamed,
       toolCalls: blocks.filter(block => block.type === 'tool_use').map(block => ({ tool: block.name, input: block.input, output: '' })),
       output: blocks.filter(block => block.type === 'text').map(block => block.text).join('\n'),
-      exitReason: abortController.signal.aborted ? 'timeout' : 'capture_threw',
+      exitReason: actorFailure ? 'actor_contract' : abortController.signal.aborted ? 'timeout' : 'capture_threw',
       turnsUsed: assistantTurns.length, durationMs: captureStartedAt ? Date.now() - captureStartedAt : 0,
       costUsd: terminal?.total_cost_usd ?? 0, costKnown: typeof terminal?.total_cost_usd === 'number',
       model: assistantTurns.find(event => event.message?.model)?.message.model,
       providerRequests: readRequests(f),
     };
-    const error = cause instanceof Error ? cause : new Error(String(cause));
+    const error = actorFailure ?? (cause instanceof Error ? cause : new Error(String(cause)));
     Object.assign(error, { sharedCapture: { result: partial, questions, diagnostic } });
     fs.mkdirSync(diagnosticDirectory, { recursive: true });
-    fs.writeFileSync(diagnostic + '.failure.json', JSON.stringify({ error: String(cause), ...partial, questions }, null, 2));
+    fs.writeFileSync(diagnostic + '.failure.json', JSON.stringify({ error: String(error), ...partial, questions }, null, 2));
     throw error;
   } finally { if (timer) clearTimeout(timer); }
 }

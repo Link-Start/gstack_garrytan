@@ -63,6 +63,9 @@ export interface EvalTestEntry {
   passed: boolean;
   duration_ms: number;
   cost_usd: number;
+  /** Absent in older records means executed; reuse is never a new model run. */
+  execution?: 'executed' | 'reused';
+  reused_from?: { input_key: string; run_id: string; revision: string; completed_at: string };
   /** 1-based record attempt for this name in this run. bun's --retry leaves
    *  retried passes INVISIBLE in its text output (a fail→pass prints no
    *  (fail) line and recaps as a clean pass — probed on 1.3.10), so the ONLY
@@ -130,6 +133,8 @@ export interface EvalResult {
   claude_cli_version?: string;
   tier: 'e2e' | 'llm-judge';
   total_tests: number;
+  executed_tests?: number;
+  reused_tests?: number;
   passed: number;
   failed: number;
   total_cost_usd: number;
@@ -248,6 +253,11 @@ export function shardSlugOfEvalDir(evalDir: string): string | null {
   return path.basename(path.dirname(normalized)) === 'shards' ? path.basename(normalized) : null;
 }
 
+/** The reserved suffix scopes collectors that share one paid-runner shard. */
+function collectorNamespaceOfFile(file: string): string | null {
+  return path.basename(file).match(/--suite-([a-z0-9]+(?:-[a-z0-9]+)*)\.json$/)?.[1] ?? null;
+}
+
 /**
  * Find the most recent finalized (non-partial) eval file for a tier, scanning
  * `evalDir` and one level of `shards/<slug>/` subdirs. Shared by the budget
@@ -312,7 +322,8 @@ export function extractToolSummary(transcript: any[]): Record<string, number> {
  * Find the most recent prior COMPLETED eval file for comparison.
  * Scans the eval dir plus one level of `shards/<slug>/` subdirs. Prefers
  * same shard slug (a shard's own history over another shard's or the flat
- * dir's), then same branch, then falls back to anything.
+ * dir's), then same branch, then falls back to anything in the same collector
+ * namespace. A sibling suite is never a comparable baseline.
  *
  * In-progress accumulators (`_partial: true`, written by savePartial after every
  * test) are never candidates: the current run's own partial carries the current
@@ -327,9 +338,11 @@ export function findPreviousRun(
   excludeFile: string,
 ): string | null {
   // Parse top-level fields from each file (cheap — no full tests array needed)
+  const namespace = collectorNamespaceOfFile(excludeFile);
   const entries: Array<{ file: string; branch: string; timestamp: string; shard: string | null }> = [];
   for (const fullPath of listEvalJsonFiles(evalDir)) {
     if (path.resolve(fullPath) === path.resolve(excludeFile)) continue;
+    if (collectorNamespaceOfFile(fullPath) !== namespace) continue;
     try {
       const raw = fs.readFileSync(fullPath, 'utf-8');
       // Quick parse — only grab the fields we need
@@ -842,12 +855,17 @@ export class EvalCollector {
   private finalized = false;
   private evalDir: string;
   private shard: string | null;
+  private fileNamespace?: string;
   private createdAt = Date.now();
 
-  constructor(tier: 'e2e' | 'llm-judge', evalDir?: string) {
+  constructor(tier: 'e2e' | 'llm-judge', evalDir?: string, fileNamespace?: string) {
+    if (fileNamespace !== undefined && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(fileNamespace)) {
+      throw new Error('Eval collector namespace must be a lowercase kebab-case slug');
+    }
     this.tier = tier;
     this.evalDir = evalDir || process.env.GSTACK_EVAL_DIR || defaultEvalDir();
     this.shard = shardSlugOfEvalDir(this.evalDir);
+    this.fileNamespace = fileNamespace;
   }
 
   addTest(entry: EvalTestEntry): void {
@@ -887,6 +905,8 @@ export class EvalCollector {
         claude_cli_version: getClaudeCliVersion(),
         tier: this.tier,
         total_tests: this.tests.length,
+        executed_tests: this.tests.filter(t => t.execution !== 'reused').length,
+        reused_tests: this.tests.filter(t => t.execution === 'reused').length,
         passed,
         failed: this.tests.length - passed,
         total_cost_usd: Math.round(totalCost * 100) / 100,
@@ -897,7 +917,7 @@ export class EvalCollector {
       };
 
       fs.mkdirSync(this.evalDir, { recursive: true });
-      const partialPath = path.join(this.evalDir, '_partial-e2e.json');
+      const partialPath = path.join(this.evalDir, `_partial-e2e${this.fileNamespace ? `-${this.fileNamespace}` : ''}.json`);
       const tmp = partialPath + '.tmp';
       fs.writeFileSync(tmp, JSON.stringify(partial, null, 2) + '\n');
       fs.renameSync(tmp, partialPath);
@@ -926,6 +946,8 @@ export class EvalCollector {
       claude_cli_version: getClaudeCliVersion(),
       tier: this.tier,
       total_tests: this.tests.length,
+      executed_tests: this.tests.filter(t => t.execution !== 'reused').length,
+      reused_tests: this.tests.filter(t => t.execution === 'reused').length,
       passed,
       failed: this.tests.length - passed,
       total_cost_usd: Math.round(totalCost * 100) / 100,
@@ -940,7 +962,9 @@ export class EvalCollector {
     fs.mkdirSync(this.evalDir, { recursive: true });
     const dateStr = timestamp.replace(/[:.]/g, '').replace('T', '-').slice(0, 15);
     const safeBranch = git.branch.replace(/[^a-zA-Z0-9._-]/g, '-');
-    const filename = `${version}-${safeBranch}-${this.tier}-${dateStr}.json`;
+    // Keep the legacy stem first: eval:compare orders candidates by basename.
+    const suffix = this.fileNamespace ? `--suite-${this.fileNamespace}` : '';
+    const filename = `${version}-${safeBranch}-${this.tier}-${dateStr}${suffix}.json`;
     const filepath = path.join(this.evalDir, filename);
     fs.writeFileSync(filepath, JSON.stringify(result, null, 2) + '\n');
 
@@ -975,7 +999,7 @@ export class EvalCollector {
     lines.push('═'.repeat(70));
 
     for (const t of this.tests) {
-      const status = t.passed ? ' PASS ' : ' FAIL ';
+      const status = !t.passed ? ' FAIL ' : t.execution === 'reused' ? ' REUSE' : ' PASS ';
       const cost = `$${t.cost_usd.toFixed(2)}`;
       const dur = t.duration_ms ? `${Math.round(t.duration_ms / 1000)}s` : '';
       const turns = t.turns_used !== undefined ? `${t.turns_used}t` : '';
@@ -996,6 +1020,7 @@ export class EvalCollector {
     const totalCost = `$${result.total_cost_usd.toFixed(2)}`;
     const totalDur = `${Math.round(result.total_duration_ms / 1000)}s`;
     lines.push(`  Total: ${result.passed}/${result.total_tests} passed${' '.repeat(20)}${totalCost.padStart(6)}  ${totalDur}`);
+    lines.push(`  Evidence: ${result.executed_tests ?? result.total_tests} executed, ${result.reused_tests ?? 0} reused`);
     if (result.flaky_retries && result.flaky_retries.length > 0) {
       // Loud, never fatal: a flaky pass must not block anyone, but it must
       // never be silent either — that invisibility is how flakes calcified.
