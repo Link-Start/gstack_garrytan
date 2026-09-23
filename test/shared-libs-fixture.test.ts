@@ -7,7 +7,10 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import {
   createSharedInteractiveToolHandler, createSharedLibsFixture, fixtureGit, fixtureWrite, installSourceShims,
   readRequests, seedOpportunitySources, sharedReadOnlyViolations, shellQuote, snapshotFixture, type SharedLibsFixture,
+  SharedCaptureAccumulator, type SharedCaptureAttempt,
 } from './helpers/shared-libs-eval-fixture';
+import { EvalCollector, type EvalTestEntry } from './helpers/eval-store';
+import { collectorOutcomeCounts } from '../scripts/test-paid-shards';
 import { E2E_TOUCHFILES, GLOBAL_TOUCHFILES, selectTests } from './helpers/touchfiles';
 
 const cleanup: string[] = [];
@@ -378,6 +381,235 @@ describe('shared-code paid dependency selection', () => {
     expect(selected('lib/eval-model.ts')).toEqual(allShared.filter(name => name !== 'shared-libs-codex-read-only'));
     for (const dependency of ['hosts/codex.ts', 'hosts/define-host.ts', 'scripts/resolvers/constants.ts']) {
       expect(selected(dependency)).toContain('shared-libs-codex-read-only');
+    }
+  });
+});
+
+describe('shared-code capture attempt accounting', () => {
+  const entry = (name: string, passed = true): EvalTestEntry => ({ name, suite: 'shared-libs', tier: 'e2e',
+    passed, duration_ms: 10, cost_usd: 0.01, turns_used: 2,
+    exit_reason: passed ? 'success' : 'timeout', output: passed ? 'completed' : 'persisted but no terminal result',
+    error: passed ? undefined : 'Claude Code process aborted by user',
+    transcript: passed ? [{ type: 'result', subtype: 'success', terminal_reason: 'completed' }]
+      : [{ type: 'user', message: { content: [{ type: 'tool_result', content: 'persisted verified record' }] } }],
+  });
+
+  async function finalized(captures: SharedCaptureAccumulator) {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-shared-attempt-'));
+    cleanup.push(directory);
+    await captures.finalize(new EvalCollector('e2e', directory));
+    const file = fs.readdirSync(directory).find(name => name.endsWith('.json') && !name.startsWith('_'))!;
+    return JSON.parse(fs.readFileSync(path.join(directory, file), 'utf8'));
+  }
+
+  test('CI scenario waves retain failed attempts while complete retries report their real success', async () => {
+    // Public scenario verdicts from CI run 35780434064, slices 2 and 4. The
+    // timeouts remain failures even though their final tool persisted a record.
+    const waves = [
+      { name: 'shared-libs-review-path-eligibility', expected: ['symlinks', 'submodule', 'ignored'],
+        first: [['submodule', true], ['ignored', true], ['symlinks', false]],
+        second: ['ignored', 'submodule', 'symlinks'] },
+      { name: 'shared-libs-review-prior-coverage', expected: ['legacy', 'removed-filter'],
+        first: [['legacy', true], ['removed-filter', false]], second: ['legacy', 'removed-filter'] },
+      { name: 'shared-libs-review-revalidation', expected: ['unchanged', 'secondary', 'branch', 'filtered'],
+        first: [['unchanged', true], ['secondary', true], ['branch', false], ['filtered', false]],
+        second: ['unchanged', 'secondary', 'branch', 'filtered'] },
+    ] as const;
+    const captures = new SharedCaptureAccumulator();
+    for (const wave of waves) {
+      await expect(captures.runAttempt(wave.name, wave.expected, 5_000, async attempt => {
+        for (const [scenario, passed] of wave.first) attempt.add(scenario, entry(wave.name, passed));
+      })).rejects.toThrow('failed scenario');
+      await captures.runAttempt(wave.name, wave.expected, 5_000, async attempt => {
+        for (const scenario of wave.second) attempt.add(scenario, entry(wave.name));
+      });
+    }
+    const result = await finalized(captures);
+    expect(result.tests.map((row: EvalTestEntry) => [row.name, row.attempt, row.passed])).toEqual(
+      waves.flatMap(wave => [[wave.name, 1, false], [wave.name, 2, true]]));
+    expect(result.flaky_retries).toEqual(waves.map(wave => ({ name: wave.name, attempts: 2 })));
+    expect(result.tests.filter((row: EvalTestEntry) => !row.passed).map((row: EvalTestEntry) => row.exit_reason))
+      .toEqual(['timeout', 'timeout', 'timeout']);
+    expect(result.tests.map((row: EvalTestEntry) => row.transcript!.filter(event => event.scenario_name).length))
+      .toEqual([3, 3, 2, 2, 4, 4]);
+    expect(result.total_cost_usd).toBe(0.18);
+    expect(collectorOutcomeCounts([result])).toEqual({ executed: 3, reused: 0, passed: 3, failed: 0, attempts: 6 });
+  });
+
+  test('missing scenarios in a later attempt cannot inherit an earlier pass', async () => {
+    const captures = new SharedCaptureAccumulator();
+    await captures.runAttempt('incomplete', ['first', 'second'], 5_000, async attempt => {
+      attempt.add('first', entry('incomplete'));
+      attempt.add('second', entry('incomplete'));
+    });
+    await expect(captures.runAttempt('incomplete', ['first', 'second'], 5_000, async attempt => {
+      attempt.add('first', entry('incomplete'));
+    })).rejects.toThrow('missing scenarios: second');
+    const result = await finalized(captures);
+    expect(result.tests[1]).toMatchObject({ attempt: 2, passed: false, exit_reason: 'attempt_incomplete' });
+    expect(collectorOutcomeCounts([result])).toEqual({ executed: 1, reused: 0, passed: 0, failed: 1, attempts: 2 });
+  });
+
+  test('setup, verification and cleanup failures survive even when all recorded captures passed', async () => {
+    const captures = new SharedCaptureAccumulator();
+    for (const phase of ['setup', 'verification', 'cleanup']) {
+      await expect(captures.runAttempt(phase, ['audit'], 5_000, async attempt => {
+        if (phase !== 'setup') attempt.add('audit', entry(phase));
+        throw new Error(`${phase} failed`);
+      })).rejects.toThrow(`${phase} failed`);
+    }
+    const result = await finalized(captures);
+    expect(result.tests.map((row: EvalTestEntry) => row.exit_reason)).toEqual(['fixture_threw', 'fixture_threw', 'fixture_threw']);
+    expect(result.tests.every((row: EvalTestEntry) => !row.passed)).toBe(true);
+    expect(result.tests[0].error).toContain('Missing scenarios: audit');
+  });
+
+  test('duplicate, foreign and mismatched captures fail even if the caller catches the immediate error', async () => {
+    const captures = new SharedCaptureAccumulator();
+    for (const kind of ['duplicate', 'foreign', 'name', 'suite', 'tier']) {
+      await expect(captures.runAttempt(kind, ['audit'], 5_000, async attempt => {
+        if (kind === 'duplicate' || kind === 'foreign') attempt.add('audit', entry(kind));
+        try {
+          const bad = { ...entry(kind), ...(kind === 'name' ? { name: 'other' }
+            : kind === 'suite' ? { suite: 'other' } : kind === 'tier' ? { tier: 'llm-judge' as const } : {}) };
+          attempt.add(kind === 'foreign' ? 'unknown' : 'audit', bad);
+        } catch { /* A caught callback error must not manufacture a passing attempt. */ }
+      })).rejects.toThrow('Invalid shared capture');
+    }
+    const result = await finalized(captures);
+    expect(result.tests.every((row: EvalTestEntry) => !row.passed && row.exit_reason === 'capture_contract')).toBe(true);
+    expect(result.tests.map((row: EvalTestEntry) => row.transcript!.filter(event => event.scenario_name).length))
+      .toEqual([2, 2, 1, 1, 1]);
+  });
+
+  test('late callbacks stay with their attempt and an unfinished latest attempt fails finalization', async () => {
+    const captures = new SharedCaptureAccumulator();
+    let previous!: SharedCaptureAttempt;
+    await captures.runAttempt('late', ['audit'], 5_000, async attempt => { previous = attempt; attempt.add('audit', entry('late')); });
+    let release!: () => void;
+    let current!: SharedCaptureAttempt;
+    const pending = captures.runAttempt('late', ['audit'], 5_000, async attempt => {
+      current = attempt;
+      await new Promise<void>(resolve => { release = resolve; });
+    });
+    expect(() => previous.add('audit', entry('late'))).toThrow('Late shared capture');
+    const result = await finalized(captures);
+    expect(result.tests[0]).toMatchObject({ passed: true, attempt: 1 });
+    expect(result.tests[1]).toMatchObject({ passed: false, attempt: 2, exit_reason: 'attempt_incomplete' });
+    expect(() => current.add('audit', entry('late'))).toThrow('Late shared capture');
+    release();
+    await expect(pending).rejects.toThrow('Late shared capture');
+    expect(collectorOutcomeCounts([result]).failed).toBe(1);
+  });
+
+  test('the path-case callback cleans its fixture when late capture recording is rejected', async () => {
+    // Invoke the actual paid test callback with a deferred free capture, rather
+    // than copying its finally block into a mock that cannot catch cleanup drift.
+    const source = fs.readFileSync(path.join(import.meta.dir, 'skill-e2e-shared-libs-paths.test.ts'), 'utf8');
+    const start = source.indexOf('async function exerciseEligibility(');
+    const end = source.indexOf('\ndescribeE2E(', start);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    const callback = new Bun.Transpiler({ loader: 'ts' }).transformSync(source.slice(start, end));
+    const captures = new SharedCaptureAccumulator();
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-late-path-'));
+    cleanup.push(directory);
+    let started!: () => void, release!: () => void;
+    const captureStarted = new Promise<void>(resolve => { started = resolve; });
+    const exercise = new Function('deps', `const { captures, preparePathEligibilityFixture, fs, path,
+      reviewLifecycleInstructions, reviewPrompt, runSharedInteractive, readRequests, expect, CAPTURE_LONG_MS } = deps;
+      ${callback}\nreturn exerciseEligibility;`)({
+      captures, fs, path, expect, CAPTURE_LONG_MS: 5_000,
+      preparePathEligibilityFixture: () => ({ fixture: { root: directory }, current: { evidence_paths: [] } }),
+      reviewLifecycleInstructions: () => 'unused instructions',
+      reviewPrompt: () => 'unused prompt',
+      readRequests: () => [],
+      runSharedInteractive: async () => {
+        started();
+        await new Promise<void>(resolve => { release = resolve; });
+        throw new Error('capture elapsed');
+      },
+    });
+    const pending = exercise('late-path-callback', ['symlinks']);
+    await captureStarted;
+    await captures.finalize(null);
+    expect(fs.existsSync(directory)).toBe(true);
+    release();
+    await expect(pending).rejects.toThrow('Late shared capture');
+    expect(fs.existsSync(directory)).toBe(false);
+  });
+
+  test('Bun configured retry creates separate complete attempt records through the real collector', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-shared-retry-'));
+    cleanup.push(directory);
+    const source = path.join(directory, 'retry.test.ts');
+    fs.writeFileSync(source, `import { afterAll, test } from 'bun:test';
+import { SharedCaptureAccumulator } from ${JSON.stringify(path.resolve(import.meta.dir, 'helpers/shared-libs-eval-fixture.ts'))};
+import { EvalCollector } from ${JSON.stringify(path.resolve(import.meta.dir, 'helpers/eval-store.ts'))};
+const captures = new SharedCaptureAccumulator();
+const collector = new EvalCollector('e2e', ${JSON.stringify(path.join(directory, 'results'))});
+let invocation = 0;
+afterAll(() => captures.finalize(collector));
+test('actual-retry', () => captures.runAttempt('actual-retry', ['audit'], 5_000, async attempt => {
+  const passed = ++invocation === 2;
+  attempt.add('audit', { name: 'actual-retry', suite: 'shared-libs', tier: 'e2e', passed,
+    duration_ms: 1, cost_usd: 0, exit_reason: passed ? 'success' : 'timeout' });
+}));
+`);
+    const run = spawnSync(process.execPath, ['test', source, '--retry', '1'], {
+      cwd: directory, encoding: 'utf8', timeout: 30_000,
+      env: { ...process.env, EVALS: '0', EVALS_TIER: 'off' },
+    });
+    expect(run.status, run.stdout + run.stderr).toBe(0);
+    const resultDir = path.join(directory, 'results');
+    const file = fs.readdirSync(resultDir).find(name => name.endsWith('.json') && !name.startsWith('_'))!;
+    const result = JSON.parse(fs.readFileSync(path.join(resultDir, file), 'utf8'));
+    expect(result.tests.map((row: EvalTestEntry) => [row.attempt, row.passed, row.exit_reason]))
+      .toEqual([[1, false, 'timeout'], [2, true, 'success']]);
+    expect(collectorOutcomeCounts([result])).toEqual({ executed: 1, reused: 0, passed: 1, failed: 0, attempts: 2 });
+  });
+
+  test('Bun outer timeouts stay failed after late completion, with and without a retry', () => {
+    for (const mode of ['retry', 'final', 'late-cleanup', 'late-cleanup-error', 'setup']) {
+      const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-shared-timeout-'));
+      cleanup.push(directory);
+      const source = path.join(directory, 'timeout.test.ts');
+      fs.writeFileSync(source, `import { afterAll, test } from 'bun:test';
+import { SharedCaptureAccumulator } from ${JSON.stringify(path.resolve(import.meta.dir, 'helpers/shared-libs-eval-fixture.ts'))};
+import { EvalCollector } from ${JSON.stringify(path.resolve(import.meta.dir, 'helpers/eval-store.ts'))};
+const captures = new SharedCaptureAccumulator();
+const collector = new EvalCollector('e2e', ${JSON.stringify(path.join(directory, 'results'))});
+const mode = ${JSON.stringify(mode)};
+let invocation = 0;
+afterAll(async () => { await new Promise(resolve => setTimeout(resolve, 220)); await captures.finalize(collector); });
+test('outer-timeout', () => captures.runAttempt('outer-timeout', ['audit'], 50, async attempt => {
+  const current = ++invocation;
+  const row = { name: 'outer-timeout', suite: 'shared-libs', tier: 'e2e', passed: true,
+    duration_ms: 1, cost_usd: 0, exit_reason: 'success' };
+  if (mode.startsWith('late-cleanup')) attempt.add('audit', row);
+  if (mode === 'setup') {
+    const setupEnd = performance.now() + 150;
+    while (performance.now() < setupEnd) { /* Synchronous fixture setup uses the same deadline. */ }
+  } else if (current === 1) await new Promise(resolve => setTimeout(resolve, 150));
+  if (mode === 'late-cleanup-error') throw new Error('cleanup failed after timeout');
+  if (!mode.startsWith('late-cleanup')) attempt.add('audit', row);
+}), { timeout: 50, retry: mode === 'retry' ? 1 : 0 });
+`);
+      const run = spawnSync(process.execPath, ['test', source], {
+        cwd: directory, encoding: 'utf8', timeout: 30_000,
+        env: { ...process.env, EVALS: '0', EVALS_TIER: 'off' },
+      });
+      expect(run.status, run.stdout + run.stderr).toBe(mode === 'retry' ? 0 : 1);
+      expect(run.stderr).not.toContain('Unhandled error between tests');
+      const resultDir = path.join(directory, 'results');
+      const file = fs.readdirSync(resultDir).find(name => name.endsWith('.json') && !name.startsWith('_'))!;
+      const result = JSON.parse(fs.readFileSync(path.join(resultDir, file), 'utf8'));
+      expect(result.tests.map((row: EvalTestEntry) => [row.attempt, row.passed]))
+        .toEqual(mode === 'retry' ? [[1, false], [2, true]] : [[1, false]]);
+      expect(['timeout', 'attempt_incomplete']).toContain(result.tests[0].exit_reason);
+      expect(result.tests[0].error).toContain('Test attempt stopped:');
+      expect(collectorOutcomeCounts([result])).toEqual({ executed: 1, reused: 0,
+        passed: mode === 'retry' ? 1 : 0, failed: mode === 'retry' ? 0 : 1, attempts: mode === 'retry' ? 2 : 1 });
     }
   });
 });

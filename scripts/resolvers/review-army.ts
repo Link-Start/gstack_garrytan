@@ -16,7 +16,7 @@ function generateSpecialistSelection(ctx: TemplateContext): string {
   const isShip = ctx.skillName === 'ship';
   const stepSel = isShip ? '9.1' : '4.5';
   const stepMerge = isShip ? '9.2' : '4.6';
-  const nextStep = isShip ? 'the Fix-First flow (item 4)' : 'Step 5';
+  const nextStep = isShip ? 'Step 9.3 (cross-review dedup)' : 'Step 5';
   return `## Step ${stepSel}: Review Army — Specialist Dispatch
 
 ### Detect stack and scope
@@ -141,7 +141,7 @@ function generateFindingsMerge(ctx: TemplateContext): string {
   const isShip = ctx.skillName === 'ship';
   const stepMerge = isShip ? '9.2' : '4.6';
   const stepSel = isShip ? '9.1' : '4.5';
-  const fixFirstRef = isShip ? 'the Fix-First flow (item 4)' : 'Step 5 Fix-First';
+  const fixFirstRef = isShip ? 'Step 9.3 dedup, then Step 9.4 Fix-First' : 'Step 5 Fix-First';
   const critPassRef = isShip ? 'the checklist pass (Step 9)' : 'the CRITICAL pass findings from Step 4';
   const persistRef = isShip ? 'the review-log persist' : 'the review-log entry in Step 5.8';
   return `### Step ${stepMerge}: Collect and merge findings
@@ -238,7 +238,7 @@ Remember these stats — you will need them for ${persistRef}.`;
 function generateRedTeam(ctx: TemplateContext): string {
   const isShip = ctx.skillName === 'ship';
   const stepMerge = isShip ? '9.2' : '4.6';
-  const fixFirstRef = isShip ? 'the Fix-First flow (item 4)' : 'Step 5 Fix-First';
+  const fixFirstRef = isShip ? 'Step 9.3 dedup, then Step 9.4 Fix-First' : 'Step 5 Fix-First';
   return `### Red Team dispatch (conditional)
 
 **Activation:** Only if DIFF_LINES > 200 OR any specialist produced a CRITICAL finding.
@@ -261,7 +261,7 @@ If the Red Team finds additional issues, merge them into the findings list befor
 ${fixFirstRef}. Red Team findings are tagged with \`"specialist":"red-team"\`.
 
 If the Red Team returns NO FINDINGS, note: "Red Team review: no additional issues found."
-If the Red Team subagent fails or times out, skip silently and continue.`;
+${isShip ? 'If the Red Team subagent fails or times out, continue through dedup and persistence with dispatched coverage incomplete. Step 9.4 must not certify that pass as completed or clean.' : 'If the Red Team subagent fails or times out, skip silently and continue.'}`;
 }
 
 export function generateReviewArmy(ctx: TemplateContext): string {

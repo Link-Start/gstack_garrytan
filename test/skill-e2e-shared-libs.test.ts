@@ -15,7 +15,7 @@ import {
   reviewRecords, runSharedCapture, runSharedInteractive, seedOpportunitySources,
   seedReviewSources, seedSkippedAdvisory, snapshotFixture, specialistFixture,
   sharedReadOnlyViolations, standaloneInstructions, toolCommandTrace, type SharedLibsFixture,
-  SharedCaptureAccumulator,
+  SharedCaptureAccumulator, type SharedCaptureAttempt,
 } from './helpers/shared-libs-eval-fixture';
 
 const describeE2E = describeE2ETier('gate');
@@ -23,7 +23,7 @@ const collector = e2eTierEnabled('gate') ? new EvalCollector('e2e') : null;
 const captures = new SharedCaptureAccumulator();
 afterAll(async () => { await captures.finalize(collector); });
 
-async function recordCapture(name: string, work: () => Promise<any>, verify: (result: any) => void) {
+async function recordCapture(attempt: SharedCaptureAttempt, scenario: string, name: string, work: () => Promise<any>, verify: (result: any) => void) {
   let result: any, passed = false, failure: unknown;
   try {
     result = await work();
@@ -37,7 +37,7 @@ async function recordCapture(name: string, work: () => Promise<any>, verify: (re
     result ??= cause?.sharedCapture?.result;
     throw cause;
   } finally {
-    captures.add({ name, suite: 'shared-libs', tier: 'e2e', passed,
+    attempt.add(scenario, { name, suite: 'shared-libs', tier: 'e2e', passed,
       duration_ms: result?.duration ?? result?.durationMs ?? 0,
       cost_usd: result?.costEstimate?.estimatedCost ?? result?.costUsd ?? 0,
       model: result?.model, turns_used: result?.costEstimate?.turnsUsed ?? result?.turnsUsed ?? 0,
@@ -92,7 +92,7 @@ function assertReadOnly(f: SharedLibsFixture, before: Record<string, string>, re
 }
 
 describeE2E('Shared-code safety and review lifecycle (gate)', () => {
-  test('shared-libs-read-only', async () => {
+  test('shared-libs-read-only', () => captures.runAttempt('shared-libs-read-only', ['audit'], CAPTURE_LONG_MS, async attempt => {
     const f = createSharedLibsFixture('read-only');
     try {
       seedOpportunitySources(f);
@@ -102,7 +102,7 @@ describeE2E('Shared-code safety and review lifecycle (gate)', () => {
       installSourceShims(f);
       const instructions = standaloneInstructions(f);
       const before = snapshotFixture(f.root);
-      await recordCapture('shared-libs-read-only', () => runSharedCapture(f, 'shared-libs-read-only',
+      await recordCapture(attempt, 'audit', 'shared-libs-read-only', () => runSharedCapture(f, 'shared-libs-read-only',
         `Run /deslop-shared-libs for this repository using ${instructions}. Include relevant uncommitted source in your audit. Return the skill's report in conversation.`), result => {
         assertReadOnly(f, before, result);
         expect(result.output).toMatch(/uncommitted|overlay|raw/i);
@@ -115,9 +115,9 @@ describeE2E('Shared-code safety and review lifecycle (gate)', () => {
         expect(result.output).not.toMatch(new RegExp(`/blob/${f.tip}/src/branch-only\\.ts`));
       });
     } finally { fs.rmSync(f.root, { recursive: true, force: true }); }
-  }, CAPTURE_LONG_MS);
+  }), CAPTURE_LONG_MS);
 
-  test('shared-libs-unsupported-git', async () => {
+  test('shared-libs-unsupported-git', () => captures.runAttempt('shared-libs-unsupported-git', ['audit'], CAPTURE_LONG_MS, async attempt => {
     const f = createSharedLibsFixture('unsupported');
     try {
       seedOpportunitySources(f);
@@ -125,7 +125,7 @@ describeE2E('Shared-code safety and review lifecycle (gate)', () => {
       installSourceShims(f, { unsupportedGit: true, unavailableApi: true });
       const instructions = standaloneInstructions(f);
       const before = snapshotFixture(f.root);
-      await recordCapture('shared-libs-unsupported-git', () => runSharedCapture(f, 'shared-libs-unsupported-git',
+      await recordCapture(attempt, 'audit', 'shared-libs-unsupported-git', () => runSharedCapture(f, 'shared-libs-unsupported-git',
         `Run /deslop-shared-libs for this repository using ${instructions}. Return the review report.`), result => {
         assertReadOnly(f, before, result);
         expect(result.output).toMatch(/unavailable|unsupported|cannot|could not|coverage|limited/i);
@@ -139,9 +139,9 @@ describeE2E('Shared-code safety and review lifecycle (gate)', () => {
         expect(result.output).not.toMatch(/no (?:recent )?(?:commits|PRs|pull requests) (?:exist|found|were found)/i);
       });
     } finally { fs.rmSync(f.root, { recursive: true, force: true }); }
-  }, CAPTURE_LONG_MS);
+  }), CAPTURE_LONG_MS);
 
-  test('shared-libs-review-lifecycle', async () => {
+  test('shared-libs-review-lifecycle', () => captures.runAttempt('shared-libs-review-lifecycle', ['skip', 'approve'], CAPTURE_LONG_MS, async attempt => {
     // Independent fixtures: each branch gets an actual question/answer and real logged result.
     const outcomes = await Promise.allSettled((['skip', 'approve'] as const).map(async choose => {
       const f = createSharedLibsFixture(`lifecycle-${choose}`);
@@ -150,7 +150,7 @@ describeE2E('Shared-code safety and review lifecycle (gate)', () => {
         const instructions = reviewLifecycleInstructions(f);
         const input = specialistFixture(f);
         let questions: any[] = [];
-        await recordCapture('shared-libs-review-lifecycle', async () => {
+        await recordCapture(attempt, choose, 'shared-libs-review-lifecycle', async () => {
           const capture = await runSharedInteractive(f, 'shared-libs-review-lifecycle', reviewPrompt(f, instructions, input), choose);
           questions = capture.questions;
           return capture.result;
@@ -195,9 +195,9 @@ describeE2E('Shared-code safety and review lifecycle (gate)', () => {
       } finally { fs.rmSync(f.root, { recursive: true, force: true }); }
     }));
     for (const outcome of outcomes) if (outcome.status === 'rejected') throw outcome.reason;
-  }, CAPTURE_LONG_MS);
+  }), CAPTURE_LONG_MS);
 
-  test('shared-libs-review-revalidation', async () => {
+  test('shared-libs-review-revalidation', () => captures.runAttempt('shared-libs-review-revalidation', ['unchanged', 'secondary', 'branch', 'filtered'], CAPTURE_LONG_MS, async attempt => {
     // Parallel independent captures fit the shared long capture budget without weakening deadlines.
     const outcomes = await Promise.allSettled((['unchanged', 'secondary', 'branch', 'filtered'] as const).map(async change => {
       const f = createSharedLibsFixture(`revalidate-${change}`);
@@ -219,7 +219,7 @@ describeE2E('Shared-code safety and review lifecycle (gate)', () => {
         const { action: _priorAction, ...current } = prior;
         fs.writeFileSync(input, JSON.stringify({ ...current, specialist: 'maintainability' }) + '\n');
         let questions: any[] = [];
-        await recordCapture('shared-libs-review-revalidation', async () => {
+        await recordCapture(attempt, change, 'shared-libs-review-revalidation', async () => {
           const capture = await runSharedInteractive(f, 'shared-libs-review-revalidation', reviewPrompt(f, instructions, input), 'skip');
           questions = capture.questions;
           return capture.result;
@@ -250,5 +250,5 @@ describeE2E('Shared-code safety and review lifecycle (gate)', () => {
       } finally { fs.rmSync(f.root, { recursive: true, force: true }); }
     }));
     for (const outcome of outcomes) if (outcome.status === 'rejected') throw outcome.reason;
-  }, CAPTURE_LONG_MS);
+  }), CAPTURE_LONG_MS);
 });

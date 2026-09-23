@@ -72,7 +72,8 @@ describe('workflow judge excerpts', () => {
   test('ship uses project-native commands and never jumps over mandatory gates', () => {
     const text = readWorkflowExcerpt('ship/SKILL.md', '# Ship:', '## Important Rules');
     expect(text).toContain("Use the project's test commands discovered in Step 4");
-    expect(text).toContain("Use the project's documented eval selection");
+    expect(text).toContain('**Project-native path:**');
+    expect(text).toContain('Use the documented selector and pre-merge command.');
     expect(text).not.toMatch(/skipping evals[^\n]*Step 9/);
     const reviewAndTriage = text.slice(text.indexOf('## Step 9:'), text.indexOf('## Step 11:'));
     expect(reviewAndTriage.match(/continue to Step 12/i)).toBeNull();
@@ -83,6 +84,16 @@ describe('workflow judge excerpts', () => {
     expect(text).not.toContain("--exec 'true'");
     expect(text).not.toContain('-X ours');
     expect(text).toContain('````text\nYou are running a ship-workflow');
+  });
+
+  test('ship review shortcuts retain dedup and fixes repeat the whole review cycle', () => {
+    const text = readWorkflowExcerpt('ship/SKILL.md', '# Ship:', '## Important Rules');
+    expect(text).toContain('Continue to Step 9.3 (cross-review dedup)');
+    expect(text).toContain('## Step 9.4: Fix-First and persistence');
+    expect(text).toContain('including design, specialists, Red Team, and dedup');
+    const audit = text.slice(text.indexOf('## Step 7:'), text.indexOf('## Step 8:'));
+    expect(audit).not.toContain('Scope Challenge');
+    expect(text).toContain('Ship anyway retains VERIFY_RESULT=fail');
   });
 
   test('a sliced section is not appended again with its generated header', () => {
@@ -106,7 +117,7 @@ describe('workflow judge excerpts', () => {
     expect(text).toContain('never create an empty commit');
     const review = text.slice(text.indexOf('## Step 9:'), text.indexOf('## Step 10:'));
     expect(review.indexOf('## Confidence Calibration')).toBeLessThan(review.indexOf('1. Read'));
-    expect(review).toContain('only continue to Step 10 after item 9');
+    expect(review).toContain('Continue to Step 10 only after a completed, converged review is persisted');
   });
 
   test('ship approval gates stay outside the subagent prompts', () => {

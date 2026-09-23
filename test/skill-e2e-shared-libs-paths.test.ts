@@ -26,6 +26,7 @@ function sourceReadTrace(result: any): string {
 }
 
 async function exerciseEligibility(testId: string, kinds: PathEligibilityCase[]) {
+  return captures.runAttempt(testId, kinds, CAPTURE_LONG_MS, async attempt => {
     // One wave fits the SDK's default semaphore of three. Serial outer tests keep
     // --concurrent from queueing later waves inside another test's 600-second wall.
     if (kinds.length > 3) throw new Error('Path eligibility groups must fit one SDK capture wave');
@@ -95,21 +96,23 @@ async function exerciseEligibility(testId: string, kinds: PathEligibilityCase[])
         scenarioError = String(error);
         throw error;
       } finally {
-        captures.add({ name: testId, suite: 'shared-libs', tier: 'e2e', passed,
-          duration_ms: result?.durationMs ?? 0, cost_usd: result?.costUsd ?? 0,
-          model: result?.model, turns_used: result?.turnsUsed ?? 0,
-          transcript: [{ scenario: kind, error: scenarioError, diagnostic: captureDiagnostic,
-            cost_known: result?.costKnown, provider_requests: f ? readRequests(f) : [] }, ...(result?.events ?? [])],
-          output: `[${kind}]${scenarioError ? ` ${scenarioError}` : ''}\n${result?.output ?? ''}`,
-          error: scenarioError,
-          exit_reason: result?.exitReason ?? 'capture_threw' });
-        if (f) fs.rmSync(f.root, { recursive: true, force: true });
+        try {
+          attempt.add(kind, { name: testId, suite: 'shared-libs', tier: 'e2e', passed,
+            duration_ms: result?.durationMs ?? 0, cost_usd: result?.costUsd ?? 0,
+            model: result?.model, turns_used: result?.turnsUsed ?? 0,
+            transcript: [{ scenario: kind, error: scenarioError, diagnostic: captureDiagnostic,
+              cost_known: result?.costKnown, provider_requests: f ? readRequests(f) : [] }, ...(result?.events ?? [])],
+            output: `[${kind}]${scenarioError ? ` ${scenarioError}` : ''}\n${result?.output ?? ''}`,
+            error: scenarioError,
+            exit_reason: result?.exitReason ?? 'capture_threw' });
+        } finally { if (f) fs.rmSync(f.root, { recursive: true, force: true }); }
       }
     };
     const results = await Promise.allSettled(kinds.map(exercise));
     const failures = results.flatMap((result, index) => result.status === 'rejected'
       ? [`${kinds[index]}: ${String(result.reason)}`] : []);
     expect(failures).toEqual([]);
+  });
 }
 
 describeE2E('Shared-code skipped advice across real source boundaries (gate)', () => {

@@ -11,7 +11,7 @@ import {
   SHARED_LIBS_ROOT, commitFixture, createSharedLibsFixture, fixtureWrite, installSourceShims,
   readRequests, runSharedCapture, runSharedInteractive, seedOpportunitySources,
   sharedReadOnlyViolations, snapshotFixture, standaloneInstructions, toolCommandTrace, type SharedLibsFixture,
-  SharedCaptureAccumulator,
+  SharedCaptureAccumulator, type SharedCaptureAttempt,
 } from './helpers/shared-libs-eval-fixture';
 
 const describeE2E = describeE2ETier('periodic');
@@ -19,7 +19,7 @@ const collector = e2eTierEnabled('periodic') ? new EvalCollector('e2e') : null;
 const captures = new SharedCaptureAccumulator();
 afterAll(async () => { await captures.finalize(collector); });
 
-async function judgedCapture(name: string, work: () => Promise<any>, verify: (result: any) => Promise<void>) {
+async function judgedCapture(attempt: SharedCaptureAttempt, scenario: string, name: string, work: () => Promise<any>, verify: (result: any) => Promise<void>) {
   let result: any, passed = false, failure: unknown;
   try {
     result = await work();
@@ -32,7 +32,7 @@ async function judgedCapture(name: string, work: () => Promise<any>, verify: (re
     result ??= cause?.sharedCapture?.result;
     throw cause;
   } finally {
-    captures.add({ name, suite: 'shared-libs', tier: 'e2e', passed,
+    attempt.add(scenario, { name, suite: 'shared-libs', tier: 'e2e', passed,
       duration_ms: result?.duration ?? result?.durationMs ?? 0,
       cost_usd: result?.costEstimate?.estimatedCost ?? result?.costUsd ?? 0,
       model: result?.model, turns_used: result?.costEstimate?.turnsUsed ?? result?.turnsUsed ?? 0,
@@ -65,7 +65,7 @@ function assertReadOnly(f: SharedLibsFixture, before: Record<string, string>, re
 }
 
 describeE2E('Shared-code opportunity and coordination judgment (periodic)', () => {
-  test('shared-libs-opportunity-judgment', async () => {
+  test('shared-libs-opportunity-judgment', () => captures.runAttempt('shared-libs-opportunity-judgment', ['empty', 'opportunity'], CAPTURE_LONG_MS, async attempt => {
     // An independent empty audit proves that zero recommendations is a successful outcome.
     const emptyAudit = async () => {
       const f = createSharedLibsFixture('empty-judgment');
@@ -75,7 +75,7 @@ describeE2E('Shared-code opportunity and coordination judgment (periodic)', () =
         installSourceShims(f);
         const instructions = standaloneInstructions(f);
         const before = snapshotFixture(f.root);
-        await judgedCapture('shared-libs-opportunity-judgment', () => runSharedCapture(f, 'shared-libs-opportunity-judgment',
+        await judgedCapture(attempt, 'empty', 'shared-libs-opportunity-judgment', () => runSharedCapture(f, 'shared-libs-opportunity-judgment',
           `Run /deslop-shared-libs using ${instructions} and return the report.`), async result => {
           assertReadOnly(f, before, result);
           await assertJudgment(result.output, {
@@ -108,7 +108,7 @@ describeE2E('Shared-code opportunity and coordination judgment (periodic)', () =
       installSourceShims(f);
       const instructions = standaloneInstructions(f);
       const before = snapshotFixture(f.root);
-      await judgedCapture('shared-libs-opportunity-judgment', () => runSharedCapture(f, 'shared-libs-opportunity-judgment',
+      await judgedCapture(attempt, 'opportunity', 'shared-libs-opportunity-judgment', () => runSharedCapture(f, 'shared-libs-opportunity-judgment',
         `Run /deslop-shared-libs using ${instructions}. Review the active TypeScript and Python areas and return the requested report.`), async result => {
         assertReadOnly(f, before, result);
         expect(result.output).toContain(f.tip.slice(0, 7));
@@ -132,16 +132,16 @@ describeE2E('Shared-code opportunity and coordination judgment (periodic)', () =
     };
     const outcomes = await Promise.allSettled([emptyAudit(), opportunityAudit()]);
     for (const outcome of outcomes) if (outcome.status === 'rejected') throw outcome.reason;
-  }, CAPTURE_LONG_MS);
+  }), CAPTURE_LONG_MS);
 
-  test('shared-libs-pr-coverage', async () => {
+  test('shared-libs-pr-coverage', () => captures.runAttempt('shared-libs-pr-coverage', ['audit'], CAPTURE_LONG_MS, async attempt => {
     const f = createSharedLibsFixture('pr-coverage');
     try {
       seedOpportunitySources(f);
       installSourceShims(f, { prCoverage: true });
       const instructions = standaloneInstructions(f);
       const before = snapshotFixture(f.root);
-      await judgedCapture('shared-libs-pr-coverage', () => runSharedCapture(f, 'shared-libs-pr-coverage',
+      await judgedCapture(attempt, 'audit', 'shared-libs-pr-coverage', () => runSharedCapture(f, 'shared-libs-pr-coverage',
         `Run /deslop-shared-libs using ${instructions}. Recent PR 7 mentions https://github.com/fixture/shared-libs/pull/42 as related work. Return the report after checking coordination within the skill's budget.`), async result => {
         assertReadOnly(f, before, result);
         const requests = readRequests(f).filter(row => row.tool === 'gh' || row.tool === 'curl');
@@ -173,9 +173,9 @@ describeE2E('Shared-code opportunity and coordination judgment (periodic)', () =
         });
       });
     } finally { fs.rmSync(f.root, { recursive: true, force: true }); }
-  }, CAPTURE_LONG_MS);
+  }), CAPTURE_LONG_MS);
 
-  test('shared-libs-plan-callers', async () => {
+  test('shared-libs-plan-callers', () => captures.runAttempt('shared-libs-plan-callers', ['plan'], CAPTURE_LONG_MS, async attempt => {
     const f = createSharedLibsFixture('plan-callers');
     try {
       seedOpportunitySources(f);
@@ -187,7 +187,7 @@ describeE2E('Shared-code opportunity and coordination judgment (periodic)', () =
       fs.writeFileSync(plan, `# Import and synchronization retry planning\nAdd two FUTURE TypeScript callers, src/import-worker.ts and src/sync-route.ts (neither exists yet). Both use the current server runtime, accept Retry-After strings/null plus injected now, need a 3600-second ceiling and caller-provided fallback, and must match the existing scheduler semantics. The draft proposes implementing a local parser in each caller. No files are implemented yet. Each caller will have an integration test; the plan currently does not mention a shared helper or shared-contract test coverage.\n\nCompatibility with current scheduler behavior, including edge cases, is fixed. This plan covers the two future callers and the shared-contract/caller proof they need. Changing existing parser semantics or migrating existing callers is outside this plan. Report discovered compatibility risks and unrelated concerns as limitations; do not silently assume compatibility or waive required proof.\n`);
       const before = snapshotFixture(f.repo);
       let questions: any[] = [];
-      await judgedCapture('shared-libs-plan-callers', async () => {
+      await judgedCapture(attempt, 'plan', 'shared-libs-plan-callers', async () => {
         const capture = await runSharedInteractive(f, 'shared-libs-plan-callers',
           `Run only the generated engineering Code Quality section and its supplied decision prerequisites in ${instructions}. The selected target and report file are ${plan}; you may update that file with the decision ledger and approved plan amendments. Review the two proposed callers' parser source under the fixed current scheduler contract, including necessary shared-contract and caller integration proof. Inspect src/scheduler.ts, its parser dependency and their tests; read other source only if needed to establish that compatibility. Do not run a repository-wide opportunity sweep. The fixture user can answer the parser-reuse choice under that unchanged contract, including its required tests and wiring; independent helper hardening or existing-caller migrations are outside this actor's interface. Report any such concerns as limitations instead of opening new decisions. Use the actual AskUserQuestion approval flow; the user will answer. After applying and reading back the approved resolution and plan amendments, return the section's findings and stop. Do not run startup or other review sections, or implement the proposed source files.`, createSharedPlanReuseSelector());
         questions = capture.questions;
@@ -213,5 +213,5 @@ describeE2E('Shared-code opportunity and coordination judgment (periodic)', () =
         });
       });
     } finally { fs.rmSync(f.root, { recursive: true, force: true }); }
-  }, CAPTURE_LONG_MS);
+  }), CAPTURE_LONG_MS);
 });

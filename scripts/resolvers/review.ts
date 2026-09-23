@@ -75,6 +75,8 @@ ${['plan-ceo-review', 'plan-eng-review'].includes(ctx.skillName) ? 'Display a fr
 - Plan-tier rows (plan-ceo-review, plan-eng-review, plan-design-review, codex-plan-review) grade a plan file, not the repo tree — never apply the wtree rule to them; they keep the 7-day freshness logic. If an entry carries \`plan_sha256\`, you MAY compare it with the plan file and note "plan changed since review" on mismatch.
 - Plan-tier fallback only: parse \`---HEAD---\`. For entries with a different \`commit\`, count elapsed commits: \`git rev-list --count STORED_COMMIT..HEAD\`. If that command FAILS, grade UNKNOWN and treat as stale. Display: "Note: {skill} review from {date} may be stale — {N} commits since review". Missing commit tracking retains the legacy note to consider re-running.
 - If all reviews grade CURRENT, do not display staleness notes`;
+  if (ctx.skillName === 'ship') return result.replace(/^- \*\*Eng Review \(required by default\):\*\*.*$/m,
+    '- **Eng Review (historical readiness):** Required for a CLEARED dashboard, not for continuing Step 1. Step 9 remains mandatory, with its finding, approval and convergence gates. The skip_eng_review setting changes this dashboard only.');
   return ctx.skillName === 'plan-eng-review' ? result.replaceAll('\\`', '`') : result;
 }
 
@@ -1375,7 +1377,7 @@ Continue to Step 9 to commit and publish the approved documentation edits.
 
 // ─── Plan File Discovery (shared helper) ──────────────────────────────
 
-function generatePlanFileDiscovery(): string {
+function generatePlanFileDiscovery(ship = false): string {
   return `### Plan File Discovery
 
 1. **Conversation context (primary):** Check if there is an active plan file in this conversation. The host agent's system messages include plan file paths when in plan mode. If found, use it directly — this is the most reliable signal.
@@ -1404,7 +1406,7 @@ done
 
 **Error handling:**
 - No plan file found → skip with "No plan file detected — skipping."
-- Plan file found but unreadable (permissions, encoding) → skip with "Plan file found but unreadable — skipping."`;
+${ship ? '- Plan file found but unreadable (permissions, encoding) → return an audit error to the parent. Do not report no plan or successful zero counts; the parent applies its audit-failure recovery and skip/stop decision.' : '- Plan file found but unreadable (permissions, encoding) → skip with "Plan file found but unreadable — skipping."'}`;
 }
 
 // ─── Plan Completion Audit ────────────────────────────────────────────
@@ -1416,7 +1418,7 @@ function generatePlanCompletionAuditInner(mode: PlanCompletionMode, part: 'audit
   let gate = '';
 
   // ── Plan file discovery (shared) ──
-  sections.push(generatePlanFileDiscovery());
+  sections.push(generatePlanFileDiscovery(mode === 'ship'));
 
   // ── Item extraction ──
   sections.push(`
@@ -1452,7 +1454,7 @@ For each item, note:
 
 Before judging completion, classify HOW each item can be verified. The diff alone cannot prove every kind of work. Items outside the current repo or system are structurally invisible to \`git diff\`.
 
-- **DIFF-VERIFIABLE** — A code change in this repo would manifest in \`git diff <base>...HEAD\`. Examples: "add UserService" (file appears), "validate input X" (validation logic appears), "create users table" (migration file appears).
+- **DIFF-VERIFIABLE** — A code change in this repo would manifest in \`git diff ${mode === 'ship' ? 'origin/<base>' : '<base>...HEAD'}\`. Examples: "add UserService" (file appears), "validate input X" (validation logic appears), "create users table" (migration file appears).
 - **CROSS-REPO** — Item names a file or change in a sibling repo (e.g., \`domain-hq/docs/dashboard.md\`, \`~/Development/<other-repo>/...\`). The current diff CANNOT prove this.
 - **EXTERNAL-STATE** — Item names state in an external system: Supabase config/RLS, Cloudflare DNS, Vercel env vars, OAuth provider allowlists, third-party SaaS, DNS records. The current diff CANNOT prove this.
 - **CONTENT-SHAPE** — Item requires a file to follow a specific convention. If the file is in this repo: diff-verifiable. If in another repo or system: see CROSS-REPO / EXTERNAL-STATE.
@@ -1474,7 +1476,7 @@ Before judging completion, classify HOW each item can be verified. The diff alon
   sections.push(`
 ### Cross-Reference Against Diff
 
-Run \`git diff origin/<base>...HEAD\` and \`git log origin/<base>..HEAD --oneline\` to understand what was implemented.
+Run \`git diff origin/<base>${mode === 'ship' ? '' : '...HEAD'}\` and \`git log origin/<base>..HEAD --oneline\` to understand what was implemented.
 
 For each extracted plan item, run the verification dispatch from the previous section, then classify:
 
@@ -1714,14 +1716,20 @@ Follow the /qa-only workflow with these modifications:
 
 ### 4. Gate logic
 
-- **All verification items PASS:** Continue silently. "Plan verification: PASS."
-- **Any FAIL:** Use AskUserQuestion:
+Record the actual result even when the user accepts a failure.
+
+- **All verification items PASS:** Set VERIFY_RESULT=pass. Continue silently. "Plan verification: PASS."
+- **Any FAIL:** Set VERIFY_RESULT=fail, then use AskUserQuestion:
   - Show the failures with screenshot evidence
   - RECOMMENDATION: Choose A if failures indicate broken functionality. Choose B if cosmetic only.
   - Options:
     A) Fix the failures before shipping (recommended for functional issues)
     B) Ship anyway — known issues (acceptable for cosmetic issues)
-- **No verification section / no server / unreadable skill:** Skip (non-blocking).
+- **No verification section / no server / unreadable skill:** Set VERIFY_RESULT=skipped; record the reason (non-blocking).
+
+Fix before shipping returns to implementation, then reruns affected tests and this
+verification. Ship anyway retains VERIFY_RESULT=fail and lists the accepted
+failures in the PR; approval never turns failed verification into a pass.
 
 ### 5. Include in PR body
 
@@ -1743,7 +1751,9 @@ export function generateCrossReviewDedup(ctx: TemplateContext): string {
 
 **Validate advisory severity first.** If a current finding has \`"severity":"CRITICAL"\` and \`"advisory":true\`, remove \`advisory\` and retain its \`CRITICAL\` severity. Handle it as a normal defect before suppression, classification, counting, scoring, and persistence. Never downgrade severity to make advisory metadata consistent. Valid INFORMATIONAL advisories remain advisory in every category, including simplification. A prior saved finding with contradictory CRITICAL/advisory metadata cannot establish a skipped defect or advisory decision: exclude it from reuse and revalidate the current finding.
 
-Before classifying findings, check if any were previously skipped by the user in a prior review on this branch.
+Before classifying findings, check if any were previously skipped by the user in a prior review on this branch.${isShip ? `
+
+**Execution:** Read prior records once. If there are no explicitly skipped findings, continue to Step 9.4. For ordinary findings use the primary-file rule below. Run the shared-code procedure only for a matching skipped advisory. Stop its eligibility checks at the first missing or unverifiable condition and re-review the supporting source for a fresh decision; incomplete evidence never permits suppression.` : ''}
 
 \`\`\`bash
 ~/.claude/skills/gstack/bin/gstack-review-read

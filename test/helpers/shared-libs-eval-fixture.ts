@@ -12,34 +12,122 @@ const gitBin = Bun.which('git') || 'git';
 const nodeBin = Bun.which('node') || '/usr/bin/node';
 export const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 
-/** One registry test can have several captures without pretending they were retries. */
-export class SharedCaptureAccumulator {
-  private captures = new Map<string, EvalTestEntry[]>();
+export interface SharedCaptureAttempt {
+  add(scenario: string, entry: EvalTestEntry): void;
+}
 
-  add(entry: EvalTestEntry): void {
-    const rows = this.captures.get(entry.name) || [];
-    rows.push(entry);
-    this.captures.set(entry.name, rows);
-    if (!entry.passed) {
-      const directory = path.join(SHARED_LIBS_ROOT, '.context/shared-libs-captures');
-      fs.mkdirSync(directory, { recursive: true });
-      fs.writeFileSync(path.join(directory, `${Date.now()}-${entry.name}-${rows.length}.json`), JSON.stringify(entry, null, 2));
+interface SharedAttemptState {
+  name: string;
+  expected: string[];
+  rows: Array<{ scenario: string; entry: EvalTestEntry }>;
+  closed: boolean;
+  rejected: boolean;
+  error?: string;
+  contractErrors: string[];
+  deadline: number;
+  stopped?: 'deadline' | 'superseded';
+}
+
+/** Keep scenario groups within their test invocation; Bun retries are separate attempts. */
+export class SharedCaptureAccumulator {
+  private attempts: SharedAttemptState[] = [];
+  private finalized = false;
+
+  private expire(state: SharedAttemptState): void {
+    if (!state.closed && !state.stopped && performance.now() >= state.deadline) state.stopped = 'deadline';
+  }
+
+  async runAttempt<T>(name: string, expected: readonly string[], timeoutMs: number,
+    work: (attempt: SharedCaptureAttempt) => Promise<T>): Promise<T> {
+    if (this.finalized) throw new Error('Shared capture accumulator already finalized');
+    if (!name || expected.length === 0 || expected.some(scenario => !scenario)
+      || new Set(expected).size !== expected.length) throw new Error('Shared capture attempt needs distinct expected scenarios');
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error('Shared capture attempt needs its declared test timeout');
+    for (const previous of this.attempts) {
+      if (previous.name === name && !previous.closed) {
+        this.expire(previous);
+        previous.stopped ??= 'superseded';
+      }
     }
+    const state: SharedAttemptState = { name, expected: [...expected], rows: [], closed: false,
+      rejected: false, contractErrors: [], deadline: performance.now() + timeoutMs };
+    this.attempts.push(state);
+    const checkActive = () => {
+      this.expire(state);
+      if (state.closed || this.finalized || state.stopped) {
+        throw new Error(`Late shared capture for ${name}: ${state.stopped ?? 'attempt closed'}`);
+      }
+    };
+    let result: T;
+    let thrown: unknown;
+    try {
+      result = await work({ add: (scenario, entry) => {
+        checkActive();
+        const duplicate = state.rows.some(row => row.scenario === scenario);
+        state.rows.push({ scenario, entry });
+        if (!state.expected.includes(scenario) || duplicate || entry.name !== name
+          || entry.suite !== 'shared-libs' || entry.tier !== 'e2e') {
+          const error = `Invalid shared capture for ${name}: unexpected, duplicate, or mismatched scenario ${scenario}`;
+          state.contractErrors.push(error);
+          throw new Error(error);
+        }
+        if (!entry.passed) {
+          const directory = path.join(SHARED_LIBS_ROOT, '.context/shared-libs-captures');
+          fs.mkdirSync(directory, { recursive: true });
+          fs.writeFileSync(path.join(directory, `${Date.now()}-${entry.name}-${this.attempts.indexOf(state) + 1}-${state.rows.length}.json`),
+            JSON.stringify(entry, null, 2), { mode: 0o600 });
+        }
+      } });
+      checkActive();
+    } catch (cause) {
+      state.rejected = true;
+      state.error = String(cause);
+      thrown = cause;
+    } finally {
+      this.expire(state);
+      state.closed = true;
+    }
+    // Bun owns the timeout verdict and detaches that invocation's promise.
+    // A late rejection becomes an unrelated error even with a catch attached.
+    // Keep only deadline-expired/superseded invocations abandoned: no success,
+    // no live timer, and their permanently failed collector record survives.
+    if (state.stopped) return await new Promise<never>(() => {});
+    if (state.rejected) throw thrown;
+    const missing = state.expected.filter(scenario => !state.rows.some(row => row.scenario === scenario));
+    if (missing.length || state.contractErrors.length || state.rows.some(row => !row.entry.passed)) {
+      throw new Error(`Shared capture attempt ${name} failed: ${[...state.contractErrors,
+        ...(missing.length ? [`missing scenarios: ${missing.join(', ')}`] : []),
+        ...state.rows.filter(row => !row.entry.passed).map(row => `failed scenario: ${row.scenario}`)].join('; ')}`);
+    }
+    return result!;
   }
 
   async finalize(collector: EvalCollector | null): Promise<void> {
+    if (this.finalized) return;
+    this.finalized = true;
     if (!collector) return;
-    for (const [name, rows] of this.captures) {
-      collector.addTest({ ...rows[0], name,
-        passed: rows.every(row => row.passed),
+    for (const state of this.attempts) {
+      this.expire(state);
+      const rows = state.rows.map(row => row.entry);
+      const missing = state.expected.filter(scenario => !state.rows.some(row => row.scenario === scenario));
+      const failed = rows.find(row => !row.passed);
+      const passed = state.closed && !state.stopped && !state.rejected && !missing.length && !state.contractErrors.length && !failed;
+      const errors = [...rows.map(row => row.error), state.error, ...state.contractErrors,
+        ...(state.stopped ? [`Test attempt stopped: ${state.stopped}`] : []),
+        ...(!state.closed ? ['Test attempt did not complete'] : []),
+        ...(missing.length ? [`Missing scenarios: ${missing.join(', ')}`] : [])].filter(Boolean);
+      collector.addTest({ ...rows[0], name: state.name, suite: 'shared-libs', tier: 'e2e', passed,
         duration_ms: rows.reduce((sum, row) => sum + row.duration_ms, 0),
         cost_usd: rows.reduce((sum, row) => sum + row.cost_usd, 0),
         turns_used: rows.reduce((sum, row) => sum + (row.turns_used || 0), 0),
-        transcript: rows.flatMap((row, index) => [{ scenario: index + 1, passed: row.passed }, ...(row.transcript || [])]),
+        transcript: rows.flatMap((row, index) => [{ scenario: index + 1, scenario_name: state.rows[index].scenario,
+          passed: row.passed }, ...(row.transcript || [])]),
         output: rows.map((row, index) => `Scenario ${index + 1} (${row.passed ? 'passed' : 'failed'}):\n${row.output || ''}`).join('\n\n'),
-        error: rows.map(row => row.error).filter(Boolean).join('\n') || undefined,
-        exit_reason: rows.every(row => row.passed) ? 'success' :
-          (rows.find(row => !row.passed)?.exit_reason === 'success' ? 'assertion_failed' : rows.find(row => !row.passed)?.exit_reason || 'capture_threw'),
+        error: [...new Set(errors)].join('\n') || undefined,
+        exit_reason: passed ? 'success' : state.stopped === 'deadline' ? 'timeout'
+          : state.stopped === 'superseded' || !state.closed ? 'attempt_incomplete' : state.contractErrors.length ? 'capture_contract'
+          : failed ? (failed.exit_reason === 'success' ? 'assertion_failed' : failed.exit_reason || 'capture_threw')
+          : state.rejected ? 'fixture_threw' : 'attempt_incomplete',
       });
     }
     await collector.finalize();

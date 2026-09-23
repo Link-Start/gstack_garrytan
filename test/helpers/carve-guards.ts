@@ -122,7 +122,7 @@ export const CARVE_GUARDS: Record<string, CarveGuard> = {
       // one per touchpoint (no anchor is a substring of another, so each is
       // independently enforced — a subsumed anchor adds zero enforcement):
       //   gerund form  → manifest trigger (renders 2x: section index + STOP)
-      //   imperative   → Step 17 handoff line
+      //   mandatory handoff → Step 17 handoff line
       //   3rd person   → hoisted doc-sync invariant
       // Matching is case-sensitive String.includes — "dispatching the" does NOT
       // contain "dispatch the" — so update anchors in lockstep with any
@@ -131,7 +131,7 @@ export const CARVE_GUARDS: Record<string, CarveGuard> = {
         'v$NEW_VERSION',
         'gstack-pr-title-rewrite',
         'dispatching the /document-release subagent to sync docs',
-        'dispatch the /document-release subagent to sync docs',
+        'Continue to mandatory Step 18 (dispatch /document-release)',
         'dispatches the /document-release subagent',
       ],
       // ...while the full create/update procedure stays carved into pr-body.md
