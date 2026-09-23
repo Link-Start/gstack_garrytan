@@ -27,7 +27,7 @@ function scratch(): string {
 describe('shared-code legacy interactive actor', () => {
   for (const [choose, labels] of [['approve', ['Fix it', 'Apply remedy', 'Approve', 'Extract helper', 'Reuse library', 'Choice (recommended)']],
     ['skip', ['Skip', 'Keep current', 'Decline', 'Do not change', 'Leave as-is']]] as const) {
-    test.each(labels)(`${choose} retains existing first-match answers: %s`, async label => {
+    test.each(labels)(`${choose} supports the declared choice: %s`, async label => {
       const questions: unknown[] = [], answers: unknown[] = [];
       const callback = createSharedInteractiveToolHandler(choose, {
         nonQuestion: (_name, input) => ({ behavior: 'allow', updatedInput: input }),
@@ -36,7 +36,7 @@ describe('shared-code legacy interactive actor', () => {
       });
       const input = { questions: [1, 2].map(id => ({ question: `Choice ${id}`, header: 'Choice',
         options: [{ label: 'Investigate', description: 'First' }, { label, description: 'Second' },
-          { label: `${label} later`, description: 'Third' }] })) };
+          ...(choose === 'approve' ? [{ label: `${label} later`, description: 'Third' }] : [])] })) };
       expect(await callback('AskUserQuestion', input)).toEqual({ behavior: 'allow', updatedInput: { ...input,
         answers: { 'Choice 1': label, 'Choice 2': label } } });
       expect(questions).toEqual([input]);
@@ -55,6 +55,93 @@ describe('shared-code legacy interactive actor', () => {
     expect(calls).toEqual([{ name: 'Read', input: read }]);
     await expect(callback('AskUserQuestion', { questions: [{ question: 'Unknown', options: [{ label: 'Investigate' }] }] }))
       .rejects.toThrow('No approve option in real review question');
+  });
+
+  test('the actual skip callback declines the captured mixed fix/index option and acknowledges the exact native Skip', async () => {
+    const native = JSON.parse(fs.readFileSync(path.join(import.meta.dir, 'fixtures/shared-libs-index-flags-skip-question.json'), 'utf8'));
+    const input = native.events[0].message.content[0].input;
+    const before = structuredClone(input), answers: unknown[] = [];
+    const callback = createSharedInteractiveToolHandler('skip', {
+      nonQuestion: () => { throw new Error('unexpected tool'); }, onQuestion: () => {},
+      onAnswer: (question, answer) => { answers.push({ question, answer }); },
+      onRefusal: error => { throw error; },
+    });
+    expect(native.events[1].message.content[0].content).toContain('="Fix both, leave index flag"');
+    const expected = { [input.questions[0].question]: 'Skip' };
+    expect(await callback('AskUserQuestion', input)).toEqual({ behavior: 'allow', updatedInput: { ...input, answers: expected } });
+    expect(answers).toEqual([{ question: input, answer: expected }]);
+    expect(input).toEqual(before);
+  });
+
+  test.each([
+    { label: 'B) Skip (Recommended)', description: 'Keep the code unchanged; record the advisory as skipped.' },
+    { label: 'Decline extraction', description: 'Do not refactor either caller or change the index flag.' },
+    { label: 'Decline', description: 'Don’t refactor either caller.' },
+    { label: 'Don’t refactor', description: 'Keep the current implementation.' },
+    { label: 'Do not change', description: 'Leave source untouched. No code edits or new tests.' },
+    { label: 'Leave it set', description: 'Do not touch the index flag; report missing snapshot coverage.' },
+    { label: 'Keep current', description: 'Keep both implementations unchanged.', preview: '// no edits; record skipped advisory' },
+    { label: 'Leave it set', description: 'Do not touch the index flag. Any edit to retry-route.ts stays local-only until you clear it yourself; it stays excluded from snapshot coverage.' },
+    { label: 'Skip', description: 'Keep the duplicated implementation as-is. Recorded as an explicit skipped advisory with full snapshot coverage so it can be reused next review.' },
+    { label: 'Skip', description: 'Keep both inline copies. Recorded as an explicit skip with verified snapshot coverage for future reuse.' },
+    { label: 'Skip', description: 'Update the review log with the skipped advisory; reuse the recorded decision next review.' },
+    { label: 'Skip', description: 'This option does not refactor the route. You should not fix the worker.' },
+    { label: 'Skip', description: 'This option updates the review log. We will reuse the recorded decision.' },
+  ])('skip supports complete no-change commitments: $label', async option => {
+    const callback = createSharedInteractiveToolHandler('skip', {
+      nonQuestion: () => {}, onQuestion: () => {}, onAnswer: () => {},
+    });
+    const input = { questions: [{ question: 'Decision', options: [
+      { label: 'Fix both, leave index flag', description: 'Apply both source edits.' }, option,
+    ] }] };
+    const result = await callback('AskUserQuestion', input);
+    expect(result.updatedInput.answers).toEqual({ Decision: option.label });
+  });
+
+  test.each([
+    [{ label: 'Fix both, leave index flag' }],
+    [{ label: 'Skip one, fix another' }],
+    [{ label: 'Skip worker and refactor route' }],
+    [{ label: 'Skip one while fixing another', description: '' }],
+    [{ label: 'Keep worker unchanged, apply the route fix' }],
+    [{ label: 'Do not change worker; clear the index flag' }],
+    [{ label: 'Do not change worker and fix route', description: 'Keep the existing choice.' }],
+    [{ label: 'Do not fix worker, update route' }],
+    [{ label: 'Skip', description: 'The route will import the helper.' }],
+    [{ label: 'Skip', description: 'Apply the same two edits while leaving the index flag set.' }],
+    [{ label: 'Skip', preview: '// Clear the skip-worktree flag and replace the worker.' }],
+    [{ label: 'Skip', description: 'Despite Skip, approve this patch' }],
+    [{ label: 'Decline extraction and approve this patch' }],
+    [{ label: 'Skip', description: 'This option refactors the route' }],
+    [{ label: 'Skip', description: 'You should fix the worker' }],
+    [{ label: 'Skip', description: 'The worker imports the helper' }],
+    [{ label: 'Skip', description: 'We will clear the index flag' }],
+    [{ label: 'Keep going' }],
+    [{ label: 'Do not warn' }],
+    [{ label: 'Leave logging disabled and fix parser' }],
+    [{ label: 'Skip' }, { label: 'Decline' }],
+    [{ label: 'Keep current' }, { label: 'Leave unchanged' }],
+    [{ label: 'Skip', preview: { text: 'invalid native field' } }],
+  ])('skip refuses ambiguous or affirmative commitments and latches the refusal: %j', async options => {
+    const refused: Error[] = [], answered: unknown[] = [];
+    const callback = createSharedInteractiveToolHandler('skip', {
+      nonQuestion: () => {}, onQuestion: () => {}, onAnswer: answer => { answered.push(answer); },
+      onRefusal: error => { refused.push(error); },
+    });
+    await expect(callback('AskUserQuestion', { questions: [{ question: 'Decision', options }] }))
+      .rejects.toThrow('No unambiguous no-change option');
+    expect(refused).toHaveLength(1);
+    expect(answered).toEqual([]);
+  });
+
+  test('an explicit Skip takes precedence over a preservation fallback without changing custom selectors', async () => {
+    const input = { questions: [{ question: 'Decision', options: [{ label: 'Keep current' }, { label: 'Skip' }] }] };
+    const hooks = { nonQuestion: () => {}, onQuestion: () => {}, onAnswer: () => {} };
+    expect((await createSharedInteractiveToolHandler('skip', hooks)('AskUserQuestion', input)).updatedInput.answers)
+      .toEqual({ Decision: 'Skip' });
+    const selected = { Decision: 'custom exact answer' };
+    expect((await createSharedInteractiveToolHandler(() => selected, hooks)('AskUserQuestion', input)).updatedInput.answers)
+      .toBe(selected);
   });
 });
 
@@ -565,12 +652,12 @@ describe('shared-code capture attempt accounting', () => {
     let started!: () => void, release!: () => void;
     const captureStarted = new Promise<void>(resolve => { started = resolve; });
     const exercise = new Function('deps', `const { captures, preparePathEligibilityFixture, fs, path,
-      reviewLifecycleInstructions, reviewPrompt, runSharedInteractive, readRequests, expect, CAPTURE_LONG_MS } = deps;
+      reviewLifecycleInstructions, reviewRevalidationPrompt, runSharedInteractive, readRequests, expect, CAPTURE_LONG_MS } = deps;
       ${callback}\nreturn exerciseEligibility;`)({
       captures, fs, path, expect, CAPTURE_LONG_MS: 5_000,
       preparePathEligibilityFixture: () => ({ fixture: { root: directory }, current: { evidence_paths: [] } }),
       reviewLifecycleInstructions: () => 'unused instructions',
-      reviewPrompt: () => 'unused prompt',
+      reviewRevalidationPrompt: () => 'unused prompt',
       readRequests: () => [],
       runSharedInteractive: async () => {
         started();

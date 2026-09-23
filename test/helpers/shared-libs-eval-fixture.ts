@@ -827,6 +827,48 @@ export async function runSharedCapture(f: SharedLibsFixture, testName: string, p
 
 export type SharedQuestionSelector = (input: Record<string, unknown>) => Record<string, string>;
 
+/** The skip actor may decline work, never approve a mixed fix/preservation choice. */
+function skippedReviewOption(question: any): any {
+  const options = Array.isArray(question?.options) ? question.options : [];
+  const candidates = options.flatMap((option: any) => {
+    if (typeof option?.label !== 'string' || ['description', 'preview'].some(field =>
+      option[field] !== undefined && typeof option[field] !== 'string')) return [];
+    const label = option.label.replace(/[‘’]/g, "'").replace(/^\s*(?:[A-Z]|\d+)[.)]\s*/i, '')
+      .replace(/\s*\(recommended\)\s*$/i, '').trim();
+    const rank = /^(?:skip|decline)(?=$|\s|[,.!])/i.test(label) ? 3
+      : /^(?:do not|don't)\s+(?:apply|change|edit|fix|refactor|extract|modify|touch|clear|remove|update|replace|add|migrate|implement|reuse|import)\b/i.test(label) ? 2
+        : /^(?:keep|leave)\b.*\b(?:current|existing|unchanged|untouched|as[- ]is|alone|set|copies|copy|implementation|code|source)\b/i.test(label) ? 1 : 0;
+    if (!rank) return [];
+    // A leading decline names rejected work. Classify later commitments rather
+    // than action words inside recorded metadata or hypothetical consequences.
+    const commitment = [label.replace(/^(?:skip|decline)\b(?:(?!\b(?:and|but|then|while)\b)[^,;\n])*/i, ''),
+      option.description ?? '', option.preview ?? ''].join('\n').replace(/[‘’]/g, "'");
+    const actions = new Set(['approve', 'fix', 'apply', 'refactor', 'extract', 'replace', 'rewrite', 'edit', 'modify',
+      'change', 'clear', 'remove', 'delete', 'add', 'update', 'implement', 'migrate', 'touch', 're-export',
+      'import', 'reuse', 'share', 'wire', 'convert']);
+    const isAction = (word = '') => [word, word.replace(/s$/, ''), word.replace(/(?:es|ed|ing)$/, ''),
+      word.replace(/(?:ed|ing)$/, 'e'), word.replace(/(?:ies|ied)$/, 'y')].some(form => actions.has(form));
+    const changes = commitment.toLowerCase().split(/[,;\n]|[.!?](?:\s|$)|\b(?:and|but|then|while)\b/).some(part => {
+      const clause = part.replace(/^[^a-z]+/, '')
+        .replace(/^(?:(?:this|that|the|selected|chosen)\s+(?:option|choice|selection)|i|we|you|it|(?:the\s+)?(?:source|code|route|worker|helper|parser|index(?:\s+flag)?))\s+/, '')
+        .replace(/^(?:will|would|should|must|can|may|does|do)\s+/, '')
+        .replace(/^(?:(?:please|also|still|just|now|be)\s+)+/, '');
+      if (/^(?:not|does not|don't|doesn't|won't|without|no)\b/.test(clause)) return false;
+      // The no-change choice may persist/reuse its review decision. That is not
+      // permission to modify source or clear an index flag.
+      if (/^(?:updates?|updated|updating|reuses?|reused|reusing)\s+(?:the\s+)?(?:(?:prior|recorded|existing)\s+)?(?:review\s+(?:log|record)|decision|advisory|snapshot|ledger)\b/.test(clause)) return false;
+      const first = clause.match(/^[a-z]+(?:-[a-z]+)*/)?.[0];
+      const future = clause.match(/\bwill\s+(?:be\s+)?([a-z]+(?:-[a-z]+)*)/)?.[1];
+      return isAction(first) || isAction(future);
+    });
+    return changes ? [] : [{ option, rank }];
+  });
+  const rank = Math.max(0, ...candidates.map(candidate => candidate.rank));
+  const choices = candidates.filter(candidate => candidate.rank === rank);
+  if (choices.length !== 1) throw new Error(`No unambiguous no-change option in real review question: ${JSON.stringify(question)}`);
+  return choices[0].option;
+}
+
 /** The SDK registers this callback directly; free tests exercise the same answer boundary. */
 export function createSharedInteractiveToolHandler(choose: 'approve' | 'skip' | SharedQuestionSelector, hooks: {
   nonQuestion: (name: string, input: Record<string, unknown>) => any;
@@ -847,13 +889,20 @@ export function createSharedInteractiveToolHandler(choose: 'approve' | 'skip' | 
       }
     }
     if (typeof choose !== 'function') {
-      for (const question of (input.questions as any[]) || []) {
-        const options = question.options || [];
-        const selected = options.find((option: any) => choose === 'skip'
-          ? /skip|keep|decline|do not|leave/i.test(option.label)
-          : /fix|apply|approve|extract|reuse|recommended/i.test(option.label));
-        if (!selected) throw new Error(`No ${choose} option in real review question: ${JSON.stringify(question)}`);
-        answers[question.question] = selected.label;
+      try {
+        if (choose === 'skip' && (!Array.isArray(input.questions) || !input.questions.length)) {
+          throw new Error('No questions supplied to the no-change review actor');
+        }
+        for (const question of (input.questions as any[]) || []) {
+          const selected = choose === 'skip' ? skippedReviewOption(question)
+            : (question.options || []).find((option: any) => /fix|apply|approve|extract|reuse|recommended/i.test(option.label));
+          if (!selected) throw new Error(`No ${choose} option in real review question: ${JSON.stringify(question)}`);
+          answers[question.question] = selected.label;
+        }
+      } catch (cause) {
+        const error = cause instanceof Error ? cause : new Error(String(cause));
+        if (choose === 'skip') hooks.onRefusal?.(error);
+        throw error;
       }
     }
     hooks.onAnswer(input, answers);

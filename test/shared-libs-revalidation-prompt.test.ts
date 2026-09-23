@@ -16,7 +16,45 @@ const source = fs.readFileSync(path.join(import.meta.dir, 'skill-e2e-shared-libs
 const helper = fs.readFileSync(path.join(import.meta.dir, 'helpers/shared-libs-eval-fixture.ts'), 'utf8');
 const native = JSON.parse(fs.readFileSync(path.join(import.meta.dir,
   'fixtures/shared-libs-revalidation-max-turns-public.json'), 'utf8'));
+const pathsNative = JSON.parse(fs.readFileSync(path.join(import.meta.dir,
+  'fixtures/shared-libs-paths-max-turns-public.json'), 'utf8'));
+const pathsSource = fs.readFileSync(path.join(import.meta.dir, 'skill-e2e-shared-libs-paths.test.ts'), 'utf8');
 const transpile = (text: string) => new Bun.Transpiler({ loader: 'ts' }).transformSync(text);
+
+function pathCaptureAdapter(capture: (...args: any[]) => Promise<any>) {
+  const start = pathsSource.indexOf('async function exerciseEligibility(');
+  const end = pathsSource.indexOf('\ndescribeE2E(', start);
+  expect(start).toBeGreaterThan(0);
+  expect(end).toBeGreaterThan(start);
+  const rows: { scenario: string; row: any }[] = [];
+  const removed: string[] = [];
+  const attempts: any[] = [];
+  const fixtures = new Map<string, SharedLibsFixture>();
+  const afterCompletion = () => { throw new Error('A non-success capture reached completion checks'); };
+  const exercise = new Function('deps', `const { captures, preparePathEligibilityFixture, fs, path,
+    reviewLifecycleInstructions, reviewPrompt, reviewRevalidationPrompt, runSharedInteractive, readRequests,
+    toolCommandTrace, sourceReadTrace, fixtureWorkingTree, reviewRecords, expect, CAPTURE_LONG_MS } = deps;
+    ${transpile(pathsSource.slice(start, end))} return exerciseEligibility;`)({
+    captures: { runAttempt: async (name: string, kinds: string[], timeout: number, work: any) => {
+      attempts.push({ name, kinds, timeout });
+      return work({ add: (scenario: string, row: any) => rows.push({ scenario, row }) });
+    } },
+    preparePathEligibilityFixture: (kind: string) => {
+      const root = path.join('/fixture root', kind);
+      const fixture = { root, repo: path.join(root, 'repo'), state: path.join(root, 'state'),
+        bin: path.join(root, 'bin') } as SharedLibsFixture;
+      fixtures.set(kind, fixture);
+      return { fixture, current: { evidence_paths: ['src/retry-route.ts'] } };
+    },
+    fs: { readFileSync: () => 'authored caller', writeFileSync: () => {},
+      rmSync: (root: string) => { removed.push(root); } }, path,
+    reviewLifecycleInstructions: (fixture: SharedLibsFixture) => path.join(fixture.root, 'review-lifecycle.md'),
+    reviewPrompt, reviewRevalidationPrompt, runSharedInteractive: capture, readRequests: () => [],
+    toolCommandTrace: afterCompletion, sourceReadTrace: afterCompletion,
+    fixtureWorkingTree: afterCompletion, reviewRecords: afterCompletion, expect, CAPTURE_LONG_MS,
+  });
+  return { exercise, rows, removed, attempts, fixtures };
+}
 
 describe('bounded shared-code revalidation prompt', () => {
   test('adds execution guidance after the complete shared prompt without supplying an answer or token', () => {
@@ -121,5 +159,65 @@ describe('bounded shared-code revalidation prompt', () => {
     expect(rows[0].row.turns_used).toBe(31);
     expect(rows[0].row.transcript).toContainEqual(native.terminal);
     expect(rows[0].row.transcript).toContainEqual(native.events.at(-1));
+  });
+
+  test.each([
+    ['shared-libs-review-path-eligibility', ['symlinks', 'submodule', 'ignored']],
+    ['shared-libs-review-index-flags', ['assume-unchanged', 'skip-worktree']],
+    ['shared-libs-review-prior-coverage', ['legacy', 'removed-filter']],
+  ] as const)('the actual %s callback supplies the existing bounded interface to every scenario', async (name, kinds) => {
+    const calls: any[][] = [];
+    const adapter = pathCaptureAdapter(async (...args: any[]) => {
+      calls.push(args);
+      throw new Error('Free capture boundary reached');
+    });
+    await expect(adapter.exercise(name, [...kinds])).rejects.toThrow('Free capture boundary reached');
+    expect(adapter.attempts).toEqual([{ name, kinds: [...kinds], timeout: CAPTURE_LONG_MS }]);
+    expect(calls).toHaveLength(kinds.length);
+    for (const kind of kinds) {
+      const fixture = adapter.fixtures.get(kind)!;
+      const expected = reviewRevalidationPrompt(fixture, path.join(fixture.root, 'review-lifecycle.md'),
+        path.join(fixture.root, 'current-advisory.jsonl'))
+        + '\nAll named caller sources are first-party authored runtime code. Inspect them directly, including any Git/path boundary, before deciding whether the previous review decision can be reused. The fixture contains no generated caller sources.';
+      expect(calls.find(call => call[0] === fixture)).toEqual([fixture, name, expected, 'skip']);
+      expect(adapter.rows.find(row => row.scenario === kind)?.row.passed).toBe(false);
+      expect(adapter.removed).toContain(fixture.root);
+    }
+  });
+
+  test('the actual path callback rejects max-turns after a correctly answered native Skip', async () => {
+    const question = pathsNative.events[0].message.content[0];
+    const answer = pathsNative.events[1].message.content[0];
+    expect(question.name).toBe('AskUserQuestion');
+    expect(answer.tool_use_id).toBe(question.id);
+    expect(answer.is_error).not.toBe(true);
+    expect(answer.content).toContain('="Skip".');
+    expect(pathsNative.terminal).toMatchObject({ subtype: 'error_max_turns', is_error: true, num_turns: 31 });
+    const questions: any[] = [];
+    const answers: any[] = [];
+    const adapter = pathCaptureAdapter(async (_fixture, _name, _prompt, choose) => {
+      const permission = createSharedInteractiveToolHandler(choose, {
+        nonQuestion: () => { throw new Error('Only the captured native question is expected'); },
+        onQuestion: input => { questions.push(input); },
+        onAnswer: (_input, values) => { answers.push(values); },
+      });
+      const decision = await permission(question.name, question.input);
+      expect(decision).toEqual({ behavior: 'allow', updatedInput: { ...question.input,
+        answers: { [question.input.questions[0].question]: 'Skip' } } });
+      return { questions, result: { exitReason: pathsNative.terminal.subtype,
+        turnsUsed: pathsNative.terminal.num_turns, durationMs: pathsNative.terminal.duration_ms,
+        costUsd: pathsNative.terminal.total_cost_usd, costKnown: true,
+        events: [...pathsNative.events, pathsNative.terminal],
+        toolCalls: [{ tool: question.name, input: question.input }], output: '' } };
+    });
+    await expect(adapter.exercise('shared-libs-review-index-flags', ['skip-worktree'])).rejects.toThrow('error_max_turns');
+    expect(answers).toEqual([{ [question.input.questions[0].question]: 'Skip' }]);
+    expect(adapter.rows).toHaveLength(1);
+    expect(adapter.rows[0]).toMatchObject({ scenario: 'skip-worktree', row: {
+      passed: false, exit_reason: 'error_max_turns', turns_used: 31,
+    } });
+    expect(adapter.rows[0].row.transcript).toContainEqual(pathsNative.terminal);
+    expect(adapter.rows[0].row.transcript).toContainEqual(pathsNative.events[1]);
+    expect(adapter.removed).toEqual([adapter.fixtures.get('skip-worktree')!.root]);
   });
 });

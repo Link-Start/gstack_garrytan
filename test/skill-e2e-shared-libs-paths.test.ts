@@ -6,7 +6,7 @@ import { CAPTURE_LONG_MS } from './helpers/eval-budgets';
 import { describeE2ETier, e2eTierEnabled } from './helpers/e2e-gate';
 import { EvalCollector } from './helpers/eval-store';
 import {
-  fixtureWorkingTree, reviewLifecycleInstructions, reviewPrompt, reviewRecords,
+  fixtureWorkingTree, reviewLifecycleInstructions, reviewRevalidationPrompt, reviewRecords,
   runSharedInteractive, toolCommandTrace, readRequests, SharedCaptureAccumulator, type SharedLibsFixture,
 } from './helpers/shared-libs-eval-fixture';
 import { preparePathEligibilityFixture, type PathEligibilityCase } from './helpers/shared-libs-path-fixture';
@@ -43,7 +43,7 @@ async function exerciseEligibility(testId: string, kinds: PathEligibilityCase[])
         const instructions = reviewLifecycleInstructions(f);
         const supplied = path.join(f.root, 'current-advisory.jsonl');
         fs.writeFileSync(supplied, JSON.stringify({ ...prepared.current, specialist: 'maintainability' }) + '\n');
-        const prompt = reviewPrompt(f, instructions, supplied)
+        const prompt = reviewRevalidationPrompt(f, instructions, supplied)
           + '\nAll named caller sources are first-party authored runtime code. Inspect them directly, including any Git/path boundary, before deciding whether the previous review decision can be reused. The fixture contains no generated caller sources.';
         const capture = await runSharedInteractive(f, testId, prompt, 'skip');
         result = capture.result;

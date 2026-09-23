@@ -313,10 +313,18 @@ describe('selectTests', () => {
       .toEqual(['shared-libs-codex-read-only', 'shared-libs-opportunity-judgment', 'shared-libs-pr-coverage',
         'shared-libs-read-only', 'shared-libs-unsupported-git'].sort());
     for (const file of ['test/helpers/shared-libs-review-start-evidence.ts', 'test/shared-libs-review-start-evidence.test.ts',
-      'test/fixtures/shared-libs-review-start-public.json', 'test/shared-libs-revalidation-prompt.test.ts',
+      'test/fixtures/shared-libs-review-start-public.json',
       'test/fixtures/shared-libs-revalidation-max-turns-public.json']) {
       expect(selectTests([file], E2E_TOUCHFILES).selected).toEqual(['shared-libs-review-revalidation']);
     }
+    const pathCases = ['shared-libs-review-path-eligibility', 'shared-libs-review-index-flags',
+      'shared-libs-review-prior-coverage'];
+    expect(selectTests(['test/shared-libs-revalidation-prompt.test.ts'], E2E_TOUCHFILES).selected.sort())
+      .toEqual([...pathCases, 'shared-libs-review-revalidation'].sort());
+    expect(selectTests(['test/fixtures/shared-libs-index-flags-skip-question.json'], E2E_TOUCHFILES).selected.sort())
+      .toEqual([...pathCases, 'shared-libs-review-revalidation', 'shared-libs-review-lifecycle'].sort());
+    expect(selectTests(['test/fixtures/shared-libs-paths-max-turns-public.json'], E2E_TOUCHFILES).selected)
+      .toEqual(['shared-libs-review-index-flags']);
   });
 
   test('skill-specific change selects only that skill and related tests', () => {

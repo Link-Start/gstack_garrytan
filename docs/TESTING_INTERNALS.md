@@ -73,7 +73,13 @@ instructions or narration does not. Saved public captures cover absolute and
 relative paths and discovery followed by a read. The revalidation prompt supplies
 the path to the trusted start-record directory and declares the existing turn
 limit. It asks the agent to batch independent reads and retrieve the complete
-final record; every source, approval, persistence, and completion check still applies.
+final record; every source, approval, persistence, and completion check still applies. The
+path-boundary fixtures use this same execution contract for symlinks, submodules,
+ignored files, index flags, and legacy or filtered evidence. Their skip actor
+accepts an explicit no-change choice; a preservation word inside an option that
+also approves changes cannot authorize edits. Captured native questions exercise
+the actual answer callback, and native turn-limit failures still fail even after
+a question was answered.
 
 The engineering and DX finding fixtures check coverage of their seeded issues
 rather than cap the total number of review questions. Each decision needs a
