@@ -132,7 +132,8 @@ describe('ship/SKILL.md — Plan Completion gate invariants (VAS-449 remediation
 
 for (const mode of ['linear', 'merge', 'published', 'dirty'] as const) {
   test(`WIP shell protocol handles ${mode} history without altering reviewed content`, () => {
-    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-wip-safety-'));
+    // Exercise Git's shell-command editor boundary even on non-Windows hosts.
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ship wip safety-'));
     const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1',
       GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.invalid',
       GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.invalid' };
@@ -173,7 +174,8 @@ for (const mode of ['linear', 'merge', 'published', 'dirty'] as const) {
       const snippet = source.match(/```bash\n(export WIP_TODO=[\s\S]*?)\n```/)![1]
         .replace('<absolute path to prepared todo>', todo).replaceAll('origin/<base>', 'origin/main');
       const result = spawnSync('bash', ['-c', snippet], {
-        cwd, env: { ...env, WIP_EDITOR: editor }, encoding: 'utf8', timeout: 10_000,
+        // GIT_EDITOR is a shell command; raw Windows paths lose their backslashes.
+        cwd, env: { ...env, WIP_EDITOR: 'sh .git/reword-editor' }, encoding: 'utf8', timeout: 10_000,
       });
       expect(result.status, result.stderr).toBe(mode === 'linear' ? 0 : 1);
       expect(git('rev-parse', 'HEAD^{tree}')).toBe(originalTree);

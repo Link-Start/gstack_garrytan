@@ -40,7 +40,7 @@ You get up to five supported opportunities and up to three recommendations, with
 
 - Added generated-host, discovery, identity, fixture, source-binding, and behavioral coverage. Gate evaluations exercise read-only access and the review action/persistence lifecycle; periodic evaluations cover ranking, PR overlap, and live Codex behavior.
 - Coverage evaluations now recognize complete combined source reads and explicit diagram legends while retaining checks for source ownership, missing output, and contradictory evidence.
-- First-question evaluations capture the displayed native question with a restricted tool set. SDK captures report provider failures directly and reject partial or stale output. Interactive evaluation captures are retained when an output directory is configured, including local runs without a named run ID.
+- First-question evaluations capture public native questions with a restricted tool set. Mode selection uses the actual question-tool callback and stops without answering. Provider failures and stale output remain failures. Interactive captures survive fixture cleanup when an output directory is configured, including local runs without a named run ID.
 
 ## [1.87.6.0] - 2026-09-18
 

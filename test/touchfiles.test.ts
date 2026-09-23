@@ -297,6 +297,28 @@ describe('selectTests', () => {
     expect(result.selected).not.toContain('retro');
   });
 
+  test('mode-question capture dependencies select its native gate', () => {
+    for (const file of [
+      'test/auq-mode-capture.test.ts', 'test/skill-ceo-section-ordering.test.ts',
+      'test/helpers/agent-sdk-runner.ts', 'test/helpers/auq-native-capture.ts',
+      'test/helpers/hermetic-env.ts', 'test/helpers/eval-store.ts',
+      'lib/claude-bin.ts', 'test/workflow-excerpt.test.ts',
+    ]) {
+      expect(selectTests([file], E2E_TOUCHFILES).selected).toContain('auq-format-gate');
+    }
+  });
+
+  test('shared-code evidence regressions select their consuming evaluations', () => {
+    expect(selectTests(['test/fixtures/shared-libs-readonly-substitution-ci16358.json'], E2E_TOUCHFILES).selected.sort())
+      .toEqual(['shared-libs-codex-read-only', 'shared-libs-opportunity-judgment', 'shared-libs-pr-coverage',
+        'shared-libs-read-only', 'shared-libs-unsupported-git'].sort());
+    for (const file of ['test/helpers/shared-libs-review-start-evidence.ts', 'test/shared-libs-review-start-evidence.test.ts',
+      'test/fixtures/shared-libs-review-start-public.json', 'test/shared-libs-revalidation-prompt.test.ts',
+      'test/fixtures/shared-libs-revalidation-max-turns-public.json']) {
+      expect(selectTests([file], E2E_TOUCHFILES).selected).toEqual(['shared-libs-review-revalidation']);
+    }
+  });
+
   test('skill-specific change selects only that skill and related tests', () => {
     const result = selectTests(['plan-ceo-review/SKILL.md'], E2E_TOUCHFILES);
     expect(result.selected).toContain('plan-ceo-review');
@@ -362,10 +384,10 @@ describe('selectTests', () => {
     expect(result.selected).not.toContain('retro');
   });
 
-  test('session tool isolation regression selects its four capture workflows', () => {
+  test('session tool isolation regression selects its capture workflows', () => {
     const result = selectTests(['test/session-runner-tools.test.ts'], E2E_TOUCHFILES);
     expect(result.selected.sort()).toEqual([
-      'carve-section-loading', 'plan-ceo-section-loading', 'plan-design-review-plan-mode', 'ship-section-loading',
+      'auq-format-gate', 'carve-section-loading', 'plan-ceo-section-loading', 'plan-design-review-plan-mode', 'ship-section-loading',
     ]);
     expect(result.reason).toBe('diff');
   });

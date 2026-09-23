@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import { sharedLibsFingerprint } from '../lib/review-evidence';
+import { hasTrustedReviewStartRead } from './helpers/shared-libs-review-start-evidence';
 import { CAPTURE_LONG_MS } from './helpers/eval-budgets';
 import { describeE2ETier, e2eTierEnabled } from './helpers/e2e-gate';
 import { EvalCollector } from './helpers/eval-store';
@@ -11,7 +12,7 @@ import {
   addBranchAndRawOverlay, createSharedLibsFixture, fixtureGit, fixtureWrite, fixtureWorkingTree,
   installHostileGitConfig, installInterpreterCanary, installNormalizingFilter,
   isInternalClaudeGitRequest,
-  installSourceShims, readRequests, reviewLifecycleInstructions, reviewPrompt,
+  installSourceShims, readRequests, reviewLifecycleInstructions, reviewPrompt, reviewRevalidationPrompt,
   reviewRecords, runSharedCapture, runSharedInteractive, seedOpportunitySources,
   seedReviewSources, seedSkippedAdvisory, snapshotFixture, specialistFixture,
   sharedReadOnlyViolations, standaloneInstructions, toolCommandTrace, type SharedLibsFixture,
@@ -220,7 +221,7 @@ describeE2E('Shared-code safety and review lifecycle (gate)', () => {
         fs.writeFileSync(input, JSON.stringify({ ...current, specialist: 'maintainability' }) + '\n');
         let questions: any[] = [];
         await recordCapture(attempt, change, 'shared-libs-review-revalidation', async () => {
-          const capture = await runSharedInteractive(f, 'shared-libs-review-revalidation', reviewPrompt(f, instructions, input), 'skip');
+          const capture = await runSharedInteractive(f, 'shared-libs-review-revalidation', reviewRevalidationPrompt(f, instructions, input), 'skip');
           questions = capture.questions;
           return capture.result;
         }, result => {
@@ -231,16 +232,21 @@ describeE2E('Shared-code safety and review lifecycle (gate)', () => {
           expect(trace).toContain('gstack-review-read');
           expect(reads).toContain('src/retry-route.ts');
           expect(reads).toContain('lib/retry-after.ts');
+          const rows = reviewRecords(f).filter(row => row.skill === 'review');
+          expect(rows.length).toBeGreaterThanOrEqual(2);
+          const last = rows.at(-1);
           if (change === 'unchanged' || change === 'filtered') {
             // A true hash comparison cannot substitute for the trusted capture and path checks.
-            expect(reads).toContain('.review-starts');
+            expect(hasTrustedReviewStartRead(result.events ?? result.transcript ?? [], {
+              repo: f.repo, directory: path.join(f.state, 'projects/fixture-shared-libs/.review-starts'),
+              state: f.state, slug: 'fixture-shared-libs',
+              branch: fixtureGit(f, 'symbolic-ref', '--quiet', '--short', 'HEAD'), wtree: fixtureWorkingTree(f),
+              startedAt: last.review_binding.started_at,
+            })).toBe(true);
             expect(trace).toContain('check-attr');
             expect(trace).toMatch(/ls-files[^\n]*(?:--stage|-s\b)|lstat|stat\s|test\s+-L|\[\s+-L/);
           }
           if (change === 'unchanged') expect(trace).toContain('canReuseSharedLibsAdvisory');
-          const rows = reviewRecords(f).filter(row => row.skill === 'review');
-          expect(rows.length).toBeGreaterThanOrEqual(2);
-          const last = rows.at(-1);
           expect(last.review_binding.branch_id).toBe(createHash('sha256').update(change === 'branch' ? 'feature-a' : 'feature/a').digest('hex'));
           if (change === 'unchanged') {
             expect((last.findings || []).some((finding: any) => finding.advisory)).toBe(false);

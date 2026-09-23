@@ -59,8 +59,21 @@ it or reading model transcripts. `question_captured` records
 `workflowCompleted: false`. With `GSTACK_EVAL_DIR`, `EVALS_RUN_ID`, or an explicit
 run ID, `native-auq/<run-id>/<test>-<suffix>/capture.json` under the eval directory
 retains the public payload, bounded current viewport, and capture outcome.
-CEO mode-selection and section-loading captures retain their noninteractive
-contracts in `auq-sdk-capture.ts`.
+CEO mode selection uses the actual SDK `AskUserQuestion` permission callback
+in `auq-sdk-capture.ts`, with the existing 12-turn and 240-second limits. It
+captures the public question and stops without submitting an answer; its
+`question_captured` outcome also records `workflowCompleted: false`. The retained
+capture survives fixture cleanup. Provider refusals and malformed questions
+remain failures. Section-loading captures retain their noninteractive contract.
+
+Shared-code revalidation fixtures pair public tool calls with their successful
+results to verify that the current trusted start record was inspected before
+completion. A discovered path in tool output counts; a path mentioned only in
+instructions or narration does not. Saved public captures cover absolute and
+relative paths and discovery followed by a read. The revalidation prompt supplies
+the path to the trusted start-record directory and declares the existing turn
+limit. It asks the agent to batch independent reads and retrieve the complete
+final record; every source, approval, persistence, and completion check still applies.
 
 The engineering and DX finding fixtures check coverage of their seeded issues
 rather than cap the total number of review questions. Each decision needs a

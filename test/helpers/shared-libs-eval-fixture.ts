@@ -8,6 +8,7 @@ import { extractSkillSections, sliceBetween } from './skill-fixture';
 import type { EvalCollector, EvalTestEntry } from './eval-store';
 
 export const SHARED_LIBS_ROOT = path.resolve(import.meta.dir, '../..');
+export const SHARED_INTERACTIVE_MAX_TURNS = 30;
 const gitBin = Bun.which('git') || 'git';
 const nodeBin = Bun.which('node') || '/usr/bin/node';
 export const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
@@ -307,18 +308,53 @@ function sharedCurlRequest(args: string[]) {
   return result;
 }
 
+type SharedShellToken = { value: string; operator: boolean };
+
+/** Find the owning command, ignoring separators inside completed substitutions. */
+function sharedShellCommandStart(tokens: SharedShellToken[], end = tokens.length): number {
+  let depth = 0;
+  for (let i = end - 1; i >= 0; i--) {
+    if (!tokens[i].operator) continue;
+    const value = tokens[i].value;
+    if (value === ')') depth++;
+    else if (value === '(') {
+      if (depth === 0) return i + 1;
+      depth--;
+    } else if (depth === 0 && [';', '|', '&', '&&', '||'].includes(value)) return i + 1;
+  }
+  return 0;
+}
+
+/** Outer tokens resume after a substitution; its commands are checked separately. */
+function sharedShellCommandTokens(tokens: SharedShellToken[], start: number, end = tokens.length, stopAtOperator = true): SharedShellToken[] {
+  const outer: SharedShellToken[] = [];
+  let depth = 0;
+  for (let i = start; i < end; i++) {
+    const token = tokens[i];
+    if (token.operator && token.value === '(') depth++;
+    else if (token.operator && token.value === ')') {
+      if (depth === 0) break;
+      depth--;
+    } else if (depth === 0) {
+      if (token.operator && stopAtOperator) break;
+      outer.push(token);
+    }
+  }
+  return outer;
+}
+
 /** Quote-aware command tokens for explicit write attempts; snapshots still verify actual filesystem effects. */
-function sharedShellTokens(command: string): Array<{ value: string; operator: boolean }> {
-  const tokens: Array<{ value: string; operator: boolean }> = [];
+function sharedShellTokens(command: string): SharedShellToken[] {
+  const tokens: SharedShellToken[] = [];
   const heredocs: Array<{ delimiter: string; stripTabs: boolean; shell: boolean }> = [];
   let word = '', quote = '';
   const flush = () => {
     if (!word) return;
     const previous = tokens.at(-1);
     if (previous?.operator && ['<<', '<<-'].includes(previous.value)) {
-      const start = tokens.findLastIndex(token => token.operator && [';', '|', '&&', '||'].includes(token.value)) + 1;
+      const line = sharedShellCommandTokens(tokens, sharedShellCommandStart(tokens));
       heredocs.push({ delimiter: word, stripTabs: previous.value === '<<-',
-        shell: tokens.slice(start).some((token, offset, line) => /(?:^|\/)(?:ba|z|da|k)?sh$/.test(token.value) &&
+        shell: line.some((token, offset) => /(?:^|\/)(?:ba|z|da|k)?sh$/.test(token.value) &&
           (offset === 0 || line.slice(0, offset).every(part => /^(?:[A-Za-z_]\w*=|env$|command$)/.test(part.value)))) });
     }
     tokens.push({ value: word, operator: false }); word = '';
@@ -348,10 +384,13 @@ function sharedShellTokens(command: string): Array<{ value: string; operator: bo
       }
       continue;
     }
-    if (';&|><'.includes(c)) {
+    if ('();&|><'.includes(c)) {
       flush();
       const next = command[i + 1];
-      if (c === '<' && next === '<' && ['<', '-'].includes(command[i + 2])) { tokens.push({ value: '<<' + command[i + 2], operator: true }); i += 2; }
+      // Unquoted grouping and command-substitution delimiters terminate the
+      // word before them: `2>&1)` duplicates fd 1, not a target named `1)`.
+      if (c === '(' || c === ')') tokens.push({ value: c, operator: true });
+      else if (c === '<' && next === '<' && ['<', '-'].includes(command[i + 2])) { tokens.push({ value: '<<' + command[i + 2], operator: true }); i += 2; }
       else if (next === c || (c === '>' && next === '&') || (c === '&' && next === '>')) { tokens.push({ value: c + next, operator: true }); i++; }
       else tokens.push({ value: c, operator: true });
     } else word += c;
@@ -376,8 +415,8 @@ export function sharedReadOnlyViolations(toolCalls: Array<{ tool: string; input:
     if (/\b(?:node\s+bootstrap\.js|npm\s+install|bun\s+(?:install|test|run\s+test))\b/.test(command)) violations.push('project execution or package installation');
     const tokens = sharedShellTokens(command);
     const isCommand = (index: number) => {
-      const start = tokens.slice(0, index).findLastIndex(token => token.operator && [';', '|', '&', '&&', '||'].includes(token.value)) + 1;
-      return tokens.slice(start, index).every(token => !token.operator &&
+      const start = sharedShellCommandStart(tokens, index);
+      return sharedShellCommandTokens(tokens, start, index, false).every(token => !token.operator &&
         /^(?:[A-Za-z_]\w*=|env$|command$|exec$|sudo$|time$|then$|do$|if$|!$|-[A-Za-z-]+$)/.test(token.value));
     };
     for (let i = 0; i < tokens.length; i++) {
@@ -387,11 +426,9 @@ export function sharedReadOnlyViolations(toolCalls: Array<{ tool: string; input:
       if (tokens[i].operator && token === '>&' && !['1', '2', '-'].includes(tokens[i + 1]?.value)) violations.push('shell file output redirection');
       if (isCommand(i) && /(?:^|\/)tee$/.test(token) && tokens[i + 1] && !tokens[i + 1].operator) violations.push('tee file output');
       if (isCommand(i) && /(?:^|\/)curl$/.test(token)) {
-        let end = i + 1;
-        while (end < tokens.length && !tokens[end].operator) end++;
         // URL variables resolve only in the instrumented process. Its request
         // record supplies endpoint validation; source text still reveals writes.
-        violations.push(...sharedCurlRequest(tokens.slice(i + 1, end).map(token => token.value)).violations
+        violations.push(...sharedCurlRequest(sharedShellCommandTokens(tokens, i + 1).map(token => token.value)).violations
           .filter(value => !value.startsWith('unsupported curl URL') && !value.includes('$')));
       }
     }
@@ -686,6 +723,18 @@ The installed gstack helpers under ${SHARED_LIBS_ROOT}/bin and ${SHARED_LIBS_ROO
 Execute the included workflow, including its real start captures, decision questions, any approved edits, convergence checks and final review record. The user will answer AskUserQuestion. This is a code review, not a standalone recent-history audit. Return the final review summary in conversation.`;
 }
 
+/** The revalidation replay measures the review lifecycle, not helper CLI discovery. */
+export function reviewRevalidationPrompt(f: SharedLibsFixture, instructions: string, specialistInput: string): string {
+  const startRecord = path.join(f.state, 'projects/fixture-shared-libs/.review-starts/<REVIEW_START>.json');
+  return `${reviewPrompt(f, instructions, specialistInput)}
+
+Revalidation fixture execution contract:
+- The runtime allows ${SHARED_INTERACTIVE_MAX_TURNS} assistant turns. Batch independent required source reads, Git configuration/attribute checks, and snapshot checks within each phase. Preserve every required evidence check and dependency: capture the real start token before reading the diff, and complete final evidence verification before persistence.
+- The trusted start-record location is ${startRecord}. Replace <REVIEW_START> with the token actually returned by --start; read and verify that record. Use the supplied helper interfaces; discovering helper CLI options is outside this replay.
+- After final verification, combine successful --finish persistence and one complete, untruncated read-back through gstack-review-read in the same tool invocation. Read back only after persistence succeeds, inspect the full current record and binding, then return the final review summary in conversation.
+- Failed persistence or verification remains a failure. Late source changes still require the workflow's normal re-review; never skip checks, questions, or convergence rules to finish within the bound.`;
+}
+
 /** Seed a real, bound skipped advisory in an earlier review; never fabricate a verified binding. */
 export async function seedSkippedAdvisory(f: SharedLibsFixture): Promise<any> {
   const { sharedLibsFingerprint } = await import('../../lib/review-evidence');
@@ -834,7 +883,7 @@ export async function runSharedInteractive(f: SharedLibsFixture, testName: strin
       systemPrompt: { type: 'preset', preset: 'claude_code' },
       userPrompt: prompt, workingDirectory: f.repo, testName, env: f.env,
       pathToClaudeCodeExecutable: claudeBinary,
-      settingSources: [], maxTurns: 30, maxRetries: 0,
+      settingSources: [], maxTurns: SHARED_INTERACTIVE_MAX_TURNS, maxRetries: 0,
       allowedTools: ['Read', 'Bash', 'Write', 'Edit', 'Glob', 'Grep', 'AskUserQuestion'],
       queryProvider: args => {
         // The SDK runner admits this request through its semaphore before calling

@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
-import { captureModeSelectionAuq, captureSectionReads, hasDisabledOutsideReview, LONG_SECTION_CAPTURE_MS } from './helpers/auq-sdk-capture';
+import { captureSectionReads, hasDisabledOutsideReview, LONG_SECTION_CAPTURE_MS } from './helpers/auq-sdk-capture';
 import { CAPTURE_MS, CAPTURE_LONG_MS } from './helpers/eval-budgets';
 import { getHermeticDirs } from './helpers/hermetic-env';
 import { runSkillTest } from './helpers/session-runner';
@@ -194,53 +194,8 @@ async function withFakeClaude(run: (dir: string, readObserved: () => Observed) =
 }
 
 describe.skipIf(process.platform === 'win32')('session-runner explicit tool availability', () => {
-  // First-question capture now has real native-tool/PTY regressions in
-  // auq-native-capture.test.ts. Mode selection keeps this SDK contract.
-  for (const kind of ['mode'] as const) {
-    const capture = (dir: string) => captureModeSelectionAuq({ planDir: dir, testName: 'capture-test', model: 'fixture-model' });
-
-    test(`${kind} AUQ capture restricts visible tools and accepts successful current output`, async () => {
-      await withFakeClaude(async (dir, readObserved) => {
-        fs.writeFileSync(path.join(dir, 'auq-case.json'), JSON.stringify({ write: 'Current decision brief' }));
-        expect(await capture(dir)).toBe('Current decision brief');
-        const observed = readObserved();
-        expect(flagValue(observed.args, '--tools')).toBe('Read,Write');
-        expect(flagValue(observed.args, '--model')).toBe('fixture-model');
-        expect(observed.args).toContain('--include-partial-messages');
-      });
-    });
-
-    test(`${kind} AUQ capture preserves provider failures even after writing a question`, async () => {
-      for (const write of [undefined, 'Incomplete decision brief']) {
-        await withFakeClaude(async (dir) => {
-          const diagnostic = 'API Error: safeguards flagged this message. Details: [reasoning_extraction]. Request ID: req_fixture';
-          fs.writeFileSync(path.join(dir, 'auq-case.json'), JSON.stringify({ write, is_error: true, result: diagnostic }));
-          let error = '';
-          try { await capture(dir); } catch (caught) { error = String(caught); }
-          expect(error).toContain('AUQ capture failed (error_api)');
-          expect(error).toContain(diagnostic);
-          expect(error).not.toContain('PRIVATE_AUQ');
-        });
-      }
-    });
-
-    test(`${kind} AUQ capture rejects failed exits and stale prior files`, async () => {
-      for (const spec of [
-        { exitCode: 1, write: 'Partial output', expected: 'exit_code_1' },
-        { subtype: 'error_max_turns', write: 'Partial output', expected: 'error_max_turns' },
-      ]) {
-        await withFakeClaude(async (dir) => {
-          fs.writeFileSync(path.join(dir, 'auq-case.json'), JSON.stringify(spec));
-          await expect(capture(dir)).rejects.toThrow(`AUQ capture failed (${spec.expected})`);
-        });
-      }
-      await withFakeClaude(async (dir) => {
-        fs.writeFileSync(path.join(dir, 'ask-capture.md'), 'Previous invocation');
-        fs.writeFileSync(path.join(dir, 'auq-case.json'), '{}');
-        expect(await capture(dir)).toBe('');
-      });
-    });
-  }
+  // First-question and mode capture have actual native-boundary controls in
+  // auq-native-capture.test.ts and auq-mode-capture.test.ts respectively.
 
   test('long section work fits the existing long capture tier with reporting headroom', () => {
     expect(LONG_SECTION_CAPTURE_MS).toBeGreaterThan(CAPTURE_MS);

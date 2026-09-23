@@ -303,6 +303,54 @@ describe('shared-code curl source isolation', () => {
       "cat <<'DATA'\ncurl -o example.json https://example.invalid\nDATA\n",
     ]) expect(sharedReadOnlyViolations(bash(command)), command).toEqual([]);
   });
+
+  test('shared safety checks preserve descriptor redirection inside shell substitutions and groups', () => {
+    const fixture = JSON.parse(fs.readFileSync(path.join(import.meta.dir,
+      'fixtures/shared-libs-readonly-substitution-ci16358.json'), 'utf8'));
+    expect(fixture.calls.map((call: { attempt: number }) => call.attempt)).toEqual([1, 2]);
+    for (const call of fixture.calls) expect(sharedReadOnlyViolations([call]), `CI attempt ${call.attempt}`).toEqual([]);
+
+    const bash = (command: string) => [{ tool: 'Bash', input: { command } }];
+    for (const command of [
+      'value=$(cat README.md 2>&1)',
+      '(cat README.md 2>&1)',
+      'value=$(inner=$(cat README.md 2>&1); printf "%s" "$inner")',
+      'value=$(cat README.md 2>/dev/null)',
+      'value=$(cat README.md >/dev/stdout)',
+      'value=$(cat README.md 2>&-)',
+      "value=$(cat <<'DATA'\nprintf data > /tmp/report\nDATA\n)",
+      "cat $(printf ignored) <<'DATA'\nprintf data >/tmp/report\nDATA\n",
+      "value=$(cat $(printf ignored) <<'DATA'\nprintf data >/tmp/report\nDATA\n)",
+      'curl $(printf https://api.github.com/repos/fixture/shared-libs) -o /dev/null',
+      'printf "%s" $(printf done) tee /tmp/report',
+      'printf "%s" $(printf done) curl -o /tmp/report',
+      'LC_ALL=C >/dev/null printf tee /tmp/report',
+      'LC_ALL=C >/dev/null printf curl -o /tmp/report',
+      "printf '%s' '2>&1)'",
+      'printf "%s" "2>&1)"',
+    ]) expect(sharedReadOnlyViolations(bash(command)), command).toEqual([]);
+
+    // Parentheses delimit executable shell, so writes inside either grouping
+    // form must remain visible. Quoted ')' stays part of a filename.
+    for (const command of [
+      'value=$(printf data > /tmp/report)',
+      '(printf data > /tmp/report)',
+      'value=$(inner=$(printf data >> /tmp/report); printf "%s" "$inner")',
+      'value=$(tee /tmp/report </dev/null)',
+      'value=$(inner=$(/usr/bin/tee /tmp/report </dev/null); printf "%s" "$inner")',
+      "value=$(bash <<'SH'\nprintf data > /tmp/report\nSH\n)",
+      "bash -s $(printf ignored) <<'SH'\nprintf data >/tmp/report\nSH\n",
+      "bash -s $(printf ignored) <<-'SH'\n\tprintf data >/tmp/report\n\tSH\n",
+      "value=$(bash -s $(printf ignored) <<'SH'\nprintf data >/tmp/report\nSH\n)",
+      'curl $(printf https://api.github.com/repos/fixture/shared-libs) -o /tmp/report',
+      'curl $(printf https://api.github.com/repos/fixture/shared-libs) --trace /tmp/report',
+      'value=$(curl $(printf https://api.github.com/repos/fixture/shared-libs) -o /tmp/report)',
+      'value=$(cat README.md 2>&9)',
+      '(cat README.md 3>/tmp/report 2>&3)',
+      'value=$(cat README.md >"/dev/null)")',
+      "printf data >& '/tmp/report)'",
+    ]) expect(sharedReadOnlyViolations(bash(command)).length, command).toBeGreaterThan(0);
+  });
 });
 
 function pinnedSource(f: SharedLibsFixture, revision: string, file: string) {

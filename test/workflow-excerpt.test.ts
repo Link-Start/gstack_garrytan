@@ -207,18 +207,19 @@ describe('workflow judge excerpts', () => {
   test('CEO capture locates Mode Selection by name for current and frozen skill copies', () => {
     const dir = mkdtempSync(join(tmpdir(), 'ceo-semantic-capture-'));
     const helper = join(import.meta.dir, 'helpers', 'auq-sdk-capture.ts');
-    const runner = join(import.meta.dir, 'helpers', 'session-runner.ts');
+    const runner = join(import.meta.dir, 'helpers', 'agent-sdk-runner.ts');
     const script = join(dir, 'capture.ts');
     writeFileSync(script, `import { mock } from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 const calls = [];
-mock.module(${JSON.stringify(runner)}, () => ({runSkillTest: async options => {
+mock.module(${JSON.stringify(runner)}, () => ({resolveClaudeBinary:()=>'/fixture/claude',runAgentSdkTest: async options => {
   calls.push(options);
-  fs.writeFileSync(path.join(options.workingDirectory, 'ask-capture.md'), 'captured mode choice');
-  return { exitReason:'success', output:'captured mode choice', toolCalls:[], browseErrors:[],
-    duration:0, transcript:[], model:options.model, firstResponseMs:0, maxInterTurnMs:0,
-    costEstimate:{inputChars:0,outputChars:0,estimatedTokens:0,estimatedCost:0,turnsUsed:0} };
+  void options.canUseTool('AskUserQuestion', {questions:[{header:'Mode',question:'captured mode choice',
+    options:['SCOPE EXPANSION','SELECTIVE EXPANSION','HOLD SCOPE','SCOPE REDUCTION'].map(label=>({label,description:''}))}]},
+    {toolUseID:'native-mode',signal:options.signal});
+  options.signal.throwIfAborted();
+  throw Error('capture failed to stop before answering');
 }}));
 const {captureModeSelectionAuq, verboseSkill} = await import(${JSON.stringify(helper)});
 const current = fs.readFileSync(${JSON.stringify(join(import.meta.dir, '..', 'plan-ceo-review', 'SKILL.md'))}, 'utf8');
@@ -238,16 +239,17 @@ console.log(JSON.stringify({calls, results}));
       expect(child.status, `${child.error ?? ''}\n${child.stderr}`).toBe(0);
       const { calls, results } = JSON.parse(child.stdout.trim().split('\n').at(-1)!);
       expect(results).toEqual([
-        { variant: 'current', heading: expect.stringMatching(/^0[A-Z]$/), captured: 'captured mode choice' },
-        { variant: 'frozen', heading: '0F', captured: 'captured mode choice' },
+        { variant: 'current', heading: expect.stringMatching(/^0[A-Z]$/), captured: expect.stringContaining('captured mode choice') },
+        { variant: 'frozen', heading: '0F', captured: expect.stringContaining('captured mode choice') },
       ]);
       expect(calls).toHaveLength(2);
       for (const call of calls) {
-        expect(call.prompt).toContain('Proceed to Mode Selection,');
-        expect(call.prompt).not.toMatch(/Step 0[A-Z]/);
-        expect(call.prompt).toContain(join(call.workingDirectory, 'plan-ceo-review', 'SKILL.md'));
-        expect(call.prompt).toContain('Do NOT search for, Glob, find, or read any OTHER SKILL.md');
-        expect(call).toMatchObject({ allowedTools: ['Read', 'Write'], maxTurns: 12, timeout: 240_000, model: 'fake-model' });
+        expect(call.userPrompt).toContain('Proceed to Mode Selection,');
+        expect(call.userPrompt).not.toMatch(/Step 0[A-Z]/);
+        expect(call.userPrompt).toContain(join(call.workingDirectory, 'plan-ceo-review', 'SKILL.md'));
+        expect(call.userPrompt).toContain('Do NOT search for, Glob, find, or read any OTHER SKILL.md');
+        expect(call.userPrompt).toContain('Ask the user through the AskUserQuestion tool and wait for their answer.');
+        expect(call).toMatchObject({ allowedTools: ['Read', 'Write', 'AskUserQuestion'], maxTurns: 12, maxRetries: 0, model: 'fake-model' });
       }
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });

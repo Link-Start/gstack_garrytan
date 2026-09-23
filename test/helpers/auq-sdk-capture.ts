@@ -1,7 +1,8 @@
 /**
  * Shared AUQ grading and fixture helpers. First-question matrix captures use
  * exact public native tool fields bound to a displayed question. CEO mode
- * selection and section-loading captures retain their existing SDK contracts.
+ * selection captures the native permission callback; section loading completes
+ * its existing noninteractive workflow.
  */
 import { resolveEvalModel } from '../../lib/eval-model';
 import * as fs from 'node:fs';
@@ -9,7 +10,11 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { runSkillTest, type SkillTestResult } from './session-runner';
-import { captureNativeFirstAuq } from './auq-native-capture';
+import { captureNativeFirstAuq, serializeNativeAuq } from './auq-native-capture';
+import { runAgentSdkTest, resolveClaudeBinary } from './agent-sdk-runner';
+import { buildSeedConfig, isHermeticEnabled } from './hermetic-env';
+import { getProjectEvalDir } from './eval-store';
+import type { NativePlanQuestion } from './plan-count-transcript';
 
 const ROOT = path.resolve(__dirname, '..', '..');
 
@@ -158,18 +163,6 @@ export function skillFromWorktree(skillName: string): { skillMd: string; section
     skillMd: fs.readFileSync(path.join(ROOT, skillName, 'SKILL.md'), 'utf-8'),
     sectionsFrom: fs.existsSync(sec) ? sec : null,
   };
-}
-
-/** A partial artifact never turns a failed provider execution into a capture. */
-function completedAuqCapture(result: SkillTestResult, outFile: string, testName: string): string {
-  if (result.exitReason !== 'success') {
-    // output is the public terminal result, not the model's private reasoning
-    // or arbitrary transcript blocks. Keep request IDs and provider errors visible.
-    const diagnostic = result.output.trim().slice(0, 2000);
-    throw new Error(`${testName}: AUQ capture failed (${result.exitReason})`
-      + (diagnostic ? `: ${diagnostic}` : '. No public terminal diagnostic returned.'));
-  }
-  try { return fs.readFileSync(outFile, 'utf-8'); } catch { return ''; }
 }
 
 /**
@@ -416,9 +409,9 @@ function execGit(args: string[]): string {
 }
 
 /**
- * Drive plan-ceo-review to its Step 0F mode-selection AskUserQuestion in the
- * given plan dir and capture the verbatim question text the model generates.
- * Returns the captured text ('' if the agent never wrote the file).
+ * Capture the real mode-selection tool input, without answering the question.
+ * Print mode retains the existing 12-turn cap; interactive CLI max-turns is
+ * print-only. Deliberate callback cancellation is not workflow completion.
  */
 export async function captureModeSelectionAuq(opts: {
   planDir: string;
@@ -426,17 +419,17 @@ export async function captureModeSelectionAuq(opts: {
   runId?: string;
   model?: string;
 }): Promise<string> {
-  const outFile = path.join(opts.planDir, 'ask-capture.md');
-  fs.rmSync(outFile, { force: true });
-  const skillPath = path.join(opts.planDir, 'plan-ceo-review', 'SKILL.md');
-  const planPath = path.join(opts.planDir, 'plan.md');
+  const startedAt = Date.now(), deadline = startedAt + 240_000;
+  const cwd = path.resolve(opts.planDir);
+  const skillPath = path.join(cwd, 'plan-ceo-review', 'SKILL.md');
+  const planPath = path.join(cwd, 'plan.md');
   // CRITICAL: pin the EXACT skill file. Without this the agent runs
   // `find / -name SKILL.md` / Glob and reads the GLOBAL install
   // (~/.claude/skills/...) instead of the version-under-test in the temp dir —
   // which silently invalidates a carved-vs-verbose A/B (both sides end up
   // reading the same global skill). Absolute path + no-wander instruction +
   // Bash disallowed (so `find /` is impossible) locks it to the planted file.
-  const prompt = `You are running a format-capture test. Use ONLY these two files:
+  const prompt = `Review the plan using ONLY these two files:
   - The skill to follow: ${skillPath}
   - The plan to review: ${planPath}
 
@@ -446,23 +439,136 @@ Read ${planPath} — that is the plan to review. It is a standalone plan documen
 
 Proceed to Mode Selection, where the skill presents the 4 review-mode options to the user via AskUserQuestion.
 
-Write the verbatim text of that AskUserQuestion (the full decision brief: title, ELI10, stakes, recommendation, every option with its pros/cons bullets, and the Net line) to ${outFile}. Do NOT call any tool to ask the user. Do NOT paraphrase. After writing the file, stop.`;
+Ask the user through the AskUserQuestion tool and wait for their answer.`;
+  const controller = new AbortController();
+  const capturedStop = new Error('Native mode question captured without an answer');
+  const timeout = new Error(`${opts.testName}: AUQ capture failed (timeout)`);
+  const model = resolveEvalModel('capture', opts.model);
+  let ownedRoot: string | undefined, artifactDir: string | undefined;
+  let outcome = 'error', diagnostic: string | undefined, actorFailure: Error | undefined;
+  let captured: { toolUseId: string; input: Record<string, unknown>; question: NativePlanQuestion; text: string } | undefined;
+  let terminal: { exitReason: string; turnsUsed: number; costUsd: number; sdkClaudeCodeVersion: string; errors?: string[] } | undefined;
+  const timer = setTimeout(() => controller.abort(timeout), Math.max(0, deadline - Date.now()));
+  const fail = (reason: string, detail?: string): never => {
+    outcome = reason;
+    throw new Error(`${opts.testName}: AUQ capture failed (${reason})${detail ? `: ${detail}` : ''}`);
+  };
+  try {
+    if (!isHermeticEnabled()) fail('hermetic_required');
+    const binary = resolveClaudeBinary();
+    if (!binary) fail('missing_binary');
+    ownedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gstack-mode-auq-'));
+    const configDir = path.join(ownedRoot, '.claude'), stateDir = path.join(ownedRoot, 'gstack-home');
+    fs.mkdirSync(configDir); fs.mkdirSync(stateDir);
+    fs.writeFileSync(path.join(configDir, '.claude.json'), JSON.stringify(buildSeedConfig({
+      apiKey: process.env.ANTHROPIC_API_KEY ?? process.env.GSTACK_ANTHROPIC_API_KEY,
+      trustedDirs: [cwd],
+    })), { mode: 0o600 });
+    try {
+      const result = await runAgentSdkTest({
+        systemPrompt: { type: 'preset', preset: 'claude_code' }, userPrompt: prompt,
+        workingDirectory: cwd, model, maxTurns: 12, maxRetries: 0,
+        allowedTools: ['Read', 'Write', 'AskUserQuestion'], permissionMode: 'default', settingSources: [],
+        pathToClaudeCodeExecutable: binary, signal: controller.signal,
+        env: { CLAUDE_CONFIG_DIR: configDir, GSTACK_HOME: stateDir, GSTACK_HEADLESS: '' },
+        testName: opts.testName, runId: opts.runId,
+        canUseTool: async (name, input, options) => {
+          try {
+            if (Date.now() >= deadline || controller.signal.reason === timeout) fail('timeout');
+            if (name !== 'AskUserQuestion') {
+              if (!['Read', 'Write'].includes(name)) fail('unexpected_tool', name);
+              return { behavior: 'allow', updatedInput: input };
+            }
+            if (captured || controller.signal.aborted) fail('duplicate_capture');
+            if (!isModeSelectionQuestion(input) || !options.toolUseID) fail('invalid_mode_question');
+            // Keep the exact native fields. The serializer adds neutral separators
+            // only; it never fills missing format or recommendation text.
+            const question = structuredClone(input.questions[0]);
+            captured = { toolUseId: options.toolUseID, input: structuredClone(input), question, text: serializeNativeAuq(question) };
+            controller.abort(capturedStop);
+          } catch (error) {
+            actorFailure = error instanceof Error ? error : new Error(String(error));
+            controller.abort(actorFailure);
+          }
+          // No permission answer (including deny) is submitted. The runner's
+          // abort closes this owned query, leaving the native tool unanswered.
+          return new Promise<never>(() => {});
+        },
+      });
+      // The terminal result can carry a refusal without any assistant text.
+      // Inspect only that public result shape, never private content blocks.
+      const lastResult = result.events.findLast(event => event.type === 'result');
+      const errors = lastResult && 'errors' in lastResult && Array.isArray(lastResult.errors)
+        ? lastResult.errors.filter((error): error is string => typeof error === 'string') : undefined;
+      terminal = { exitReason: result.exitReason, turnsUsed: result.turnsUsed,
+        costUsd: result.costUsd, sdkClaudeCodeVersion: result.sdkClaudeCodeVersion, errors };
+      if (actorFailure) throw actorFailure;
+      fail(result.exitReason === 'success' ? 'missing_question' : result.exitReason,
+        [result.output.trim(), ...(errors ?? [])].filter(Boolean).join('\n').slice(0, 2000));
+    } catch (error) {
+      if (actorFailure) throw actorFailure;
+      if (error !== capturedStop || controller.signal.reason !== capturedStop || !captured) throw error;
+      outcome = 'question_captured';
+    }
+  } catch (error) {
+    if (error === timeout) outcome = 'timeout';
+    diagnostic = String(error).slice(0, 2000);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    let cleanupError: string | undefined, artifactError: string | undefined;
+    try { if (ownedRoot) fs.rmSync(ownedRoot, { recursive: true, force: true }); }
+    catch (error) { cleanupError = String(error); }
+    if (cleanupError && outcome === 'question_captured') outcome = 'cleanup_error';
+    try {
+      if (process.env.GSTACK_EVAL_DIR || process.env.EVALS_RUN_ID || opts.runId) {
+        const segment = (value: string) => value.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120) || 'run';
+        const runId = opts.runId || process.env.EVALS_RUN_ID || 'local';
+        const root = path.resolve(process.env.GSTACK_EVAL_DIR || getProjectEvalDir(), 'native-auq', segment(runId));
+        fs.mkdirSync(root, { recursive: true, mode: 0o700 });
+        artifactDir = fs.mkdtempSync(path.join(root, `${segment(opts.testName)}-`));
+        fs.writeFileSync(path.join(artifactDir, 'capture.json'), JSON.stringify({
+          ...captured, source: 'can_use_tool', outcome, workflowCompleted: false, answered: false,
+          diagnostic, cleanupError, terminal, billing: terminal ? 'terminal_result' : 'unavailable',
+          model, cwd, runId, testName: opts.testName, maxTurns: 12, timeoutMs: 240_000,
+          elapsedMs: Date.now() - startedAt, at: new Date().toISOString(),
+        }, null, 2) + '\n', { mode: 0o600 });
+      }
+    } catch (error) { artifactError = String(error); }
+    console.log(`[AUQ-mode ${opts.testName}] outcome=${outcome} workflowCompleted=false`
+      + (artifactDir ? ` artifact=${artifactDir}` : '')
+      + (artifactError ? ` artifactError=${artifactError}` : '')
+      + (cleanupError ? ` cleanupError=${cleanupError}` : ''));
+    if ((outcome === 'question_captured' && artifactError) || outcome === 'cleanup_error')
+      throw new Error(`${opts.testName}: AUQ capture failed (${cleanupError ? 'cleanup_error' : 'artifact_error'}): ${cleanupError || artifactError}`);
+  }
+  return captured!.text;
+}
 
-  const result = await runSkillTest({
-    prompt,
-    workingDirectory: opts.planDir,
-    // Read + Write only: no Bash means the agent cannot `find /` its way to the
-    // global install, and the skill's preamble bash blocks (irrelevant to format
-    // capture) can't run and wander.
-    allowedTools: ['Read', 'Write'],
-    tools: ['Read', 'Write'],
-    publicStreamDiagnostics: true,
-    maxTurns: 12,
-    timeout: 240_000,
-    testName: opts.testName,
-    runId: opts.runId,
-    model: resolveEvalModel('capture', opts.model),
-  });
-
-  return completedAuqCapture(result, outFile, opts.testName);
+/** Native schema plus the existing four-mode fixture contract, not a grade. */
+function isModeSelectionQuestion(input: Record<string, unknown>): input is { questions: [NativePlanQuestion] } {
+  const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
+  if (Object.keys(input).some(key => !['questions', 'metadata', 'answers', 'annotations'].includes(key)) ||
+      !Array.isArray(input.questions) || input.questions.length !== 1) return false;
+  // Native input has optional analytics metadata and UI completion fields.
+  // Empty completion defaults are harmless; a supplied answer/note is outside
+  // this before-answer capture boundary.
+  if (['answers', 'annotations'].some(key => input[key] !== undefined &&
+      (!object(input[key]) || Object.keys(input[key]).length !== 0))) return false;
+  if (input.metadata !== undefined && (!object(input.metadata) || Object.keys(input.metadata).some(key => key !== 'source') ||
+      (input.metadata.source !== undefined && typeof input.metadata.source !== 'string'))) return false;
+  const q = input.questions[0];
+  if (!q || typeof q !== 'object' || Object.keys(q).some(key => !['header', 'question', 'options', 'multiSelect'].includes(key)) ||
+      typeof q.header !== 'string' || !q.header.trim() || typeof q.question !== 'string' || !q.question.trim() ||
+      (q.multiSelect !== undefined && q.multiSelect !== false) || !Array.isArray(q.options) || q.options.length !== 4 ||
+      !q.options.every((o: any) => o && typeof o === 'object' && Object.keys(o).every(key => ['label', 'description', 'preview'].includes(key)) &&
+        typeof o.label === 'string' && o.label.trim() && (o.description === undefined || typeof o.description === 'string') &&
+        (o.preview === undefined || typeof o.preview === 'string')) ||
+      new Set(q.options.map((o: any) => o.label)).size !== 4) return false;
+  // Pinned CLI 2.1.251 also permits option.preview. Retain it in the receipt;
+  // a visual artifact preview does not replace the decision brief being graded.
+  // Native labels can be concise while the decision brief names the full modes.
+  const publicText = serializeNativeAuq(q);
+  return ['SCOPE EXPANSION', 'SELECTIVE EXPANSION', 'HOLD SCOPE', 'SCOPE REDUCTION']
+    .every(mode => new RegExp(`\\b${mode}\\b`, 'i').test(publicText));
 }
