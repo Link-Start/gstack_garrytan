@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.88.0.0] - 2026-09-21
+## [1.89.0.0] - 2026-09-24
 
 **Find shared code worth keeping.**
 **Get the evidence before you extract it.**
@@ -41,6 +41,22 @@ You get up to five supported opportunities and up to three recommendations, with
 - Added generated-host, discovery, identity, fixture, source-binding, and behavioral coverage. Gate evaluations exercise read-only access and the review action/persistence lifecycle; periodic evaluations cover ranking, PR overlap, and live Codex behavior.
 - Coverage evaluations now recognize complete combined source reads and explicit diagram legends while retaining checks for source ownership, missing output, and contradictory evidence.
 - First-question evaluations capture public native questions with a restricted tool set. Mode selection uses the actual question-tool callback and stops without answering. Provider failures and stale output remain failures. Interactive captures survive fixture cleanup when an output directory is configured, including local runs without a named run ID.
+
+## [1.88.1.0] - 2026-09-22
+
+Credential masking follows the exact detected source, and pre-push scans follow the actual destination. Browser agents and CSO operations retain precise ownership, while settings updates and artifact reinitialization preserve user-owned data.
+
+### Fixed
+- Credential masking uses original spans mapped from normalized matches, so anchored assignments, repeated values, Unicode and entity input redact the flagged value without masking a later neighbor. Sanitizable CSO source stays readable as masked text; unmaskable payloads remain withheld.
+- Pre-push scans bind their ranges to the destination's name and effective URL, including separate push URLs. Missing advertised objects use a conservative range, SHA-256 repositories get the correct empty tree, and bounded slices retain normalized proximity context without fabricating line anchors or duplicate findings. Unscannable long lines or context windows still block explicitly.
+- Hermetic evaluation children reject credential-shaped variables admitted through broad CI prefixes, while preserving CI metadata, named provider authentication and explicit runner overrides.
+- Browser agents belong to the persistent daemon and an exact process generation. Replacement requires confirmed exit, failed startup retains uncertain children, and publication and shutdown share a lock so older generations cannot delete a successor's discoverability files. Repeated failed respawns are bounded. Uncertain ownership and abandoned publication locks require manual recovery rather than a process sweep.
+- CSO lease recovery preserves 64-bit filesystem identities and nanosecond timestamps instead of rounding them. Adjacent identities remain distinct, replaced files remain protected, and ambiguous legacy state is still refused.
+- Settings mutations, backups and rollback resolve the selected symlink target and share its canonical lock. Links, private file modes and unrelated settings survive; changed or invalid targets are refused.
+- Artifact reinitialization updates managed allowlist entries while retaining the user suffix byte-for-byte, including comments and a missing final newline. Ambiguous markers and failed reads or assembly leave the original allowlist intact.
+
+### Changed
+- Required native macOS checks cover agent lifecycle, concurrent shutdown and linked settings. The native Windows CSO suite exercises repeated commands and exact high-ID lease recovery on NTFS.
 
 ## [1.87.6.0] - 2026-09-18
 
