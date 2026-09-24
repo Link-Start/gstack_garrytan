@@ -154,7 +154,7 @@ jobs:
     # parity data before raising.
     # The complete gate census needs at most 197 minutes per slice; keep
     # 20 minutes for setup/upload without preempting configured retries.
-    timeout-minutes: 220
+    timeout-minutes: 221
     permissions:
       contents: read
       packages: read

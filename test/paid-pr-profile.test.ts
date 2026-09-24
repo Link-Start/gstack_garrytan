@@ -78,6 +78,21 @@ describe('PR profile paid-runner integration', () => {
     expect(result.coverage?.needsFullValidation).toBe(false);
   });
 
+  test('F8 selects one judge and defers its two periodic readiness actors', () => {
+    const selection = computePaidCaseSelection({ profile: 'pr', env: {}, changedFiles: [
+      'sync-gbrain/SKILL.md.tmpl', 'bin/gstack-gbrain-read-capability.ts',
+      'test/helpers/sync-gbrain-readiness-fixture.ts',
+    ] });
+    expect(selection.coverage?.mode).toBe('pr');
+    expect(selection.selection.judges).toEqual(['sync-gbrain/SKILL.md read-only readiness']);
+    expect(selection.selection.e2e).toEqual([]);
+    expect(selection.coverage?.deferred.map(({ id }) => id).filter(id => id.startsWith('sync-gbrain-read-')).sort()).toEqual([
+      'sync-gbrain-read-ready', 'sync-gbrain-read-unknown',
+    ]);
+    expect(selection.coverage?.deferred.filter(({ id }) => !id.startsWith('sync-gbrain-read-')).every(({ id }) => id.startsWith('journey-'))).toBe(true);
+    expect(selection.coverage?.needsFullValidation).toBe(false);
+  });
+
   test('version-only release changes are verified against the real merge-base before exemption', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pr-package-'));
     const git = (args: string[]) => {

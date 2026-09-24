@@ -1352,6 +1352,8 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
     'scripts/resolvers/gbrain.ts',
     'test/skill-e2e-gbrain-roundtrip-local.test.ts',
   ],
+  'sync-gbrain-read-ready': ['sync-gbrain/SKILL.md.tmpl', 'sync-gbrain/SKILL.md', 'bin/gstack-gbrain-read-capability.ts', 'lib/gbrain-exec.ts', 'test/helpers/sync-gbrain-readiness-fixture.ts', 'test/helpers/sync-gbrain-readiness-verdict.ts', 'test/skill-e2e-sync-gbrain-readiness.test.ts'],
+  'sync-gbrain-read-unknown': ['sync-gbrain/SKILL.md.tmpl', 'sync-gbrain/SKILL.md', 'bin/gstack-gbrain-read-capability.ts', 'lib/gbrain-exec.ts', 'test/helpers/sync-gbrain-readiness-fixture.ts', 'test/helpers/sync-gbrain-readiness-verdict.ts', 'test/skill-e2e-sync-gbrain-readiness.test.ts'],
 
   // WS2 arm benchmark — with-skill vs without-skill agentic arms scored on
   // the git diff left behind (research instrument, never a release gate).
@@ -1487,6 +1489,8 @@ export const E2E_TIERS: Record<string, 'gate' | 'periodic'> = {
   // GBrain CLI round-trip — periodic per Voyage embedding cost (~$0.001/run)
   // and external-API-dependency (skips cleanly if VOYAGE_API_KEY unset).
   'gbrain-roundtrip-local': 'periodic',
+  'sync-gbrain-read-ready': 'periodic',
+  'sync-gbrain-read-unknown': 'periodic',
   'office-hours-forcing-energy': 'periodic',   // D2a demotion 2026-08: posture score, periodic-grade signal (sibling precedent at office-hours-tone)
   // 'office-hours-builder-wildness' retiered to periodic in v1.32 contributor
   // wave: this is an LLM-judge creativity score (axis_a ≥4 on a "wildness"
@@ -1823,6 +1827,7 @@ export const LLM_JUDGE_TOUCHFILES: Record<string, string[]> = {
   'retro/SKILL.md instructions':          ['retro/sections/**', 'retro/SKILL.md', 'retro/SKILL.md.tmpl', 'test/skill-llm-eval.test.ts', 'test/helpers/workflow-judge-input.ts', 'test/helpers/workflow-judge-cache.ts', 'test/workflow-judge-cache.test.ts', 'scripts/eval-input-cache.ts', 'test/eval-input-cache.test.ts', 'test/workflow-judge-input.test.ts', 'test/helpers/workflow-excerpt.ts'],
   'qa-only/SKILL.md workflow':            ['qa-only/SKILL.md', 'qa-only/SKILL.md.tmpl', 'test/skill-llm-eval.test.ts', 'test/helpers/workflow-judge-input.ts', 'test/helpers/workflow-judge-cache.ts', 'test/workflow-judge-cache.test.ts', 'scripts/eval-input-cache.ts', 'test/eval-input-cache.test.ts', 'test/workflow-judge-input.test.ts', 'test/helpers/workflow-excerpt.ts'],
   'gstack-upgrade/SKILL.md upgrade flow': ['gstack-upgrade/SKILL.md', 'gstack-upgrade/SKILL.md.tmpl', 'test/skill-llm-eval.test.ts', 'test/helpers/workflow-judge-input.ts', 'test/helpers/workflow-judge-cache.ts', 'test/workflow-judge-cache.test.ts', 'scripts/eval-input-cache.ts', 'test/eval-input-cache.test.ts', 'test/workflow-judge-input.test.ts', 'test/helpers/workflow-excerpt.ts'],
+  'sync-gbrain/SKILL.md read-only readiness': ['sync-gbrain/SKILL.md', 'sync-gbrain/SKILL.md.tmpl', 'bin/gstack-gbrain-read-capability.ts', 'test/skill-llm-eval.test.ts', 'test/helpers/workflow-judge-input.ts', 'test/helpers/workflow-judge-cache.ts', 'test/workflow-judge-cache.test.ts', 'scripts/eval-input-cache.ts', 'test/eval-input-cache.test.ts', 'test/workflow-judge-input.test.ts'],
 
   // Voice directive
   'voice directive tone':                 ['scripts/resolvers/preamble.ts', 'review/SKILL.md', 'review/SKILL.md.tmpl', 'scripts/gen-skill-docs.ts', 'test/skill-llm-eval.test.ts'],
