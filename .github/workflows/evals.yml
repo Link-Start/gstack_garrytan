@@ -120,7 +120,7 @@ jobs:
   # deterministically; fork work gets real coverage via a trusted base-repo
   # branch (see CLAUDE.md's garrytan-agents workflow).
   plan-slices:
-    runs-on: ubicloud-standard-8
+    runs-on: ubicloud-standard-2
     if: github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     timeout-minutes: 10
     permissions:
@@ -261,7 +261,7 @@ jobs:
           EVALS_CACHE_REPOSITORY: ${{ github.repository }}
           EVALS_CACHE_PR: ${{ github.event.pull_request.number }}
           EVALS_CACHE_RUNTIME_ID: ${{ needs.build-image.outputs.runtime-id }}
-        run: EVALS_TIER=gate bun run scripts/test-paid-shards.ts --tier gate --plan /tmp/paid-plan/manifest.json --slice ${{ matrix.slice }}
+        run: EVALS_TIER=gate bun scripts/ci-resource-metrics.ts --output /tmp/paid-resources.json --label paid-${{ matrix.slice }} -- bun run scripts/test-paid-shards.ts --tier gate --plan /tmp/paid-plan/manifest.json --slice ${{ matrix.slice }}
 
       - name: Find finalized passing receipts
         id: receipts
@@ -293,6 +293,15 @@ jobs:
           name: paid-slice-${{ matrix.slice }}
           path: /tmp/paid-slice-results
           retention-days: 90
+
+      - name: Upload runner resource measurements
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: paid-resources-${{ matrix.slice }}
+          path: /tmp/paid-resources.json
+          if-no-files-found: error
+          retention-days: 30
 
       # The spooled per-shard full logs — a red weekly/PR lane three weeks
       # later needs more than a summary line.

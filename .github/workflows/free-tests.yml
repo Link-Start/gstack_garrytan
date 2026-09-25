@@ -39,7 +39,7 @@ permissions:
 
 jobs:
   free-plan:
-    runs-on: ubuntu-24.04
+    runs-on: ubicloud-standard-2
     timeout-minutes: 5
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
@@ -247,7 +247,7 @@ jobs:
       # if a future edit drops the gate build (or poppler), the lane FAILS
       # instead of the gates silently self-skipping back to false green.
       - name: Run free suite
-        run: xvfb-run -a bun run test:free --ci-run "$RUNNER_TEMP/free-plan.json" --shard ${{ matrix.shard }} --result "$RUNNER_TEMP/free-results/shard-${{ matrix.shard }}.json"
+        run: bun scripts/ci-resource-metrics.ts --output "$RUNNER_TEMP/free-resources.json" --label free-${{ matrix.shard }} -- xvfb-run -a bun run test:free --ci-run "$RUNNER_TEMP/free-plan.json" --shard ${{ matrix.shard }} --result "$RUNNER_TEMP/free-results/shard-${{ matrix.shard }}.json"
         env:
           GSTACK_EXPECT_BINARIES: "1"
           # WS1 flake telemetry: a single timing flake must not red the only
@@ -268,6 +268,15 @@ jobs:
           name: free-result-${{ matrix.shard }}
           path: ${{ runner.temp }}/free-results/*.json
           if-no-files-found: error
+
+      - name: Upload runner resource measurements
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: free-resources-${{ matrix.shard }}
+          path: ${{ runner.temp }}/free-resources.json
+          if-no-files-found: error
+          retention-days: 30
 
       # Uploaded unconditionally (not just on failure): a flaky-pass run is
       # GREEN — that's the point — so its evidence must survive green runs.
@@ -304,7 +313,7 @@ jobs:
   free-tests:
     if: always()
     needs: [free-suite, cso-macos-launcher, cso-windows-launcher, cso-docker-integration]
-    runs-on: ubuntu-24.04
+    runs-on: ubicloud-standard-2
     timeout-minutes: 5
     steps:
       - name: Require the free suite and every CSO platform gate

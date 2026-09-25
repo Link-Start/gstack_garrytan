@@ -259,6 +259,31 @@ the entire lane, not separately to every machine. Refresh the full timing list
 with `bun run test:free --record-durations`. Profiling records failures faithfully
 and is separate from final release acceptance.
 
+**Measured paid scheduling.** `scripts/paid-test-durations.json` contains native
+file wall times with run, attempt, checkout and artifact provenance. The planner
+uses them only when tier, profile and the complete selected case sets match.
+`GSTACK_PAID_TEST_DURATIONS` can point at another seed for a controlled experiment;
+an absent, invalid or nonmatching seed retains the supervised-budget schedule.
+Unknown files use a conservative percentile of the matching measured files.
+The candidate starts larger measured files first and balances their two-worker
+tail, but is accepted only if that tail improves and the worst supervised wall
+does not increase for any worker count. Overlay, dedicated Autoplan and
+ordinary-only lanes retain their ownership. These weights never set execution
+deadlines, retries, case selection or model budgets.
+
+**CI resource receipts.** Free and paid PR workers invoke
+`bun scripts/ci-resource-metrics.ts --output <json> --label <label> -- <command> <args...>`.
+The Linux wrapper samples aggregate `/proc/stat` ticks and `/proc/meminfo` at
+the endpoints and roughly once per second. CPU average is weighted by tick
+deltas; zero-tick measurements are unavailable (`null`), not fabricated zeros.
+Memory is sampled runner-wide used memory, not process RSS, and neither metric
+isolates the test command from other runner activity. Sampling can miss brief
+peaks. Child stdio and status are preserved; cancellation records the requested
+signal even when a child exits successfully after cleanup. A seven-second
+owned-group grace leaves the shard supervisor its existing five-second kill
+and six-second controller-exit windows. Hangup requests use graceful SIGTERM
+forwarding so that same cleanup runs. Receipts contain no child argv or environment.
+
 **CI planner/executor/report.** `--emit-plan <path> --slices K` computes
 selection + the slice plan ONCE (killing per-slice selector divergence);
 `--plan <path> --slice i` executors consume the manifest and write

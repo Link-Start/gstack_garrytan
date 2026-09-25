@@ -80,7 +80,7 @@ jobs:
             ${{ env.IMAGE }}:latest
 
   plan-slices:
-    runs-on: ubicloud-standard-8
+    runs-on: ubicloud-standard-2
     timeout-minutes: 10
     permissions:
       contents: read

@@ -4,6 +4,28 @@ Audit source: `06ed920a974809ebedc6bcbbe402fb81f5944598`, September 24, 2026.
 This is a coverage inventory and a focused refactor, not a claim that every
 test assertion is interchangeable with another assertion about the same skill.
 
+## Measured CI scheduling and resource evidence
+
+The CI throughput follow-up uses a separate September 25 baseline: paid Actions
+run `36160376176`, attempt 1, head `c32df847` (native checkout `2aa04d73`). Its
+38 planned files select 84 behavior identifiers and 26 judge identifiers. The
+report records 106 automated passes and one manually accepted, unscored judge;
+two all-skipped files receive no coverage credit. File walls include startup,
+skips and configured retries, including the shared-libs-paths retry. The older
+comparison run `36074636907` reused 14 results and is not a matching fresh sample.
+
+`scripts/paid-test-durations.json` retains native elapsed values and their
+run/artifact provenance. Replaying that sample through two workers per slice
+predicts a longest slice of 1,005.91 seconds instead of 1,308.48 seconds, with
+the same 38 files. This is a scheduling simulation, not a measured hardware
+speedup. The actual baseline test steps ranged from 252 to 1,312 seconds.
+
+Historical artifacts contain no CPU/RAM measurements. New PR runs retain
+`free-resources-*` and `paid-resources-*` artifacts for that evidence. Runner
+size or concurrency comparisons must use the same source, selected cases,
+runtime and cache policy, retain every attempt, and distinguish queue/setup
+time from measured test time. A partial live pilot is not release acceptance.
+
 ## One owner for each kind of evidence
 
 Tests can share setup or inspect the same public capture. They must not count

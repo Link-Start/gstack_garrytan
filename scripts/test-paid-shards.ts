@@ -1017,7 +1017,77 @@ export function retriesForFiles(files: string[]): number {
   return Math.max(1, ...files.map((f) => RETRY_OVERRIDES[normalizeRelativePath(f)] ?? 1));
 }
 
-/** Round-robin the RUNNABLE (sorted) shard plan across K slices — deterministic. */
+export function loadPaidTestDurations(manifest: PaidRunManifest, rootDir = ROOT,
+  env: NodeJS.ProcessEnv = process.env): Record<string, number> | null {
+  try {
+    const seed = JSON.parse(fs.readFileSync(env.GSTACK_PAID_TEST_DURATIONS
+      ?? path.join(rootDir, 'scripts/paid-test-durations.json'), 'utf8'));
+    const selectionKey = (selection: PaidCaseSelection) => JSON.stringify({
+      e2e: selection.e2e === null ? null : [...selection.e2e].sort(),
+      judges: selection.judges === null ? null : [...selection.judges].sort(),
+    });
+    if (seed.version !== 1 || seed.tier !== manifest.tier || seed.profile !== manifest.profile ||
+        !manifest.selection || selectionKey(seed.selection) !== selectionKey(manifest.selection)) return null;
+    const durations = Object.entries(seed.durations ?? {});
+    if (!durations.length || durations.some(([, value]) =>
+      typeof value !== 'number' || !Number.isFinite(value) || value <= 0)) return null;
+    return Object.fromEntries(durations) as Record<string, number>;
+  } catch {
+    return null;
+  }
+}
+
+export function balancePaidSlices(manifest: PaidRunManifest, durations: Record<string, number>,
+  timeoutMs?: number): ManifestEntry[] {
+  const overlaySlice = manifest.sliceCount - Number(manifest.autoplanSlice !== undefined);
+  const reserveOverlay = overlaySlice > 1 && manifest.entries.some(entry =>
+    entry.status === 'planned' && isOverlayTestFile(entry.file));
+  const laneCount = overlaySlice - Number(reserveOverlay);
+  const ordinary = manifest.entries.filter(entry => entry.status === 'planned' &&
+    !isOverlayTestFile(entry.file) && entry.slice !== manifest.autoplanSlice);
+  const measured = ordinary.map(entry => durations[entry.file]).filter(value =>
+    Number.isFinite(value) && value > 0).sort((a, b) => a - b);
+  if (laneCount < 2 || measured.length === 0) return manifest.entries;
+  const fallback = measured[Math.floor((measured.length - 1) * 0.75)];
+  const weight = (file: string) => Number.isFinite(durations[file]) && durations[file] > 0 ? durations[file] : fallback;
+  const byDuration = (a: string, b: string) => weight(b) - weight(a) || (a < b ? -1 : a > b ? 1 : 0);
+  const existing = Array.from({ length: laneCount }, (_, index) =>
+    ordinary.filter(entry => entry.slice === index + 1).map(entry => entry.file));
+  const limits = Array.from({ length: ordinary.length }, (_, index) => Math.max(...existing.map(files =>
+    paidShardWallUpperBoundMs(files, index + 1, timeoutMs))));
+  const predictedWall = (files: string[]) => {
+    const workers = [0, 0];
+    for (const file of files) workers[workers[0] <= workers[1] ? 0 : 1] += weight(file);
+    return Math.max(...workers);
+  };
+  const registered = new Set(ordinary.filter(entry => entry.file === AUTOPLAN_CHAIN_BUDGET.file ||
+    FILE_RETRY_BUDGETS.some(budget => budget.file === entry.file)).map(entry => entry.file));
+  const longLanes = laneCount - Number(registered.size > 0 && registered.size < ordinary.length);
+  const ordered = ordinary.map(entry => entry.file).sort((a, b) => {
+    if (registered.has(a) !== registered.has(b)) return registered.has(a) ? -1 : 1;
+    return (registered.has(a) ? resolvePaidShardTimeoutMs([b], timeoutMs) - resolvePaidShardTimeoutMs([a], timeoutMs) : 0)
+      || byDuration(a, b);
+  });
+  const planned: string[][] = Array.from({ length: laneCount }, () => []);
+  for (const file of ordered) {
+    let best = -1, bestWall = Infinity;
+    for (let lane = 0; lane < (registered.has(file) ? longLanes : laneCount); lane++) {
+      const candidate = [...planned[lane], file].sort(byDuration);
+      if (limits.some((limit, index) => paidShardWallUpperBoundMs(candidate, index + 1, timeoutMs) > limit)) continue;
+      const wall = predictedWall(candidate);
+      if (wall < bestWall) { best = lane; bestWall = wall; }
+    }
+    if (best === -1) return manifest.entries;
+    planned[best].push(file);
+    planned[best].sort(byDuration);
+  }
+  if (Math.max(...planned.map(predictedWall)) >= Math.max(...existing.map(predictedWall))) return manifest.entries;
+  const allocations = new Map(planned.flatMap((files, lane) => files.map(file => [file, lane + 1] as const)));
+  return ordinary.map(entry => ({ ...entry, slice: allocations.get(entry.file)! }))
+    .sort((a, b) => byDuration(a.file, b.file))
+    .concat(manifest.entries.filter(entry => !allocations.has(entry.file)));
+}
+
 export function buildRunManifest(opts: {
   tier: PaidTier;
   profile?: PaidProfile;
@@ -1106,6 +1176,8 @@ export function buildRunManifest(opts: {
     ...(opts.dedicatedAutoplanSlice ? { autoplanSlice: opts.sliceCount } : {}),
     entries,
   };
+  const durations = loadPaidTestDurations(manifest, rootDir, env);
+  if (durations) manifest.entries = balancePaidSlices(manifest, durations, opts.timeoutMs);
   return parseRunManifest(JSON.stringify(manifest));
 }
 
