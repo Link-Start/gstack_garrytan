@@ -1,4 +1,1 @@
-self-hosted-runner:
-  labels:
-    - ubicloud-standard-2
-    - ubicloud-standard-8
+{self-hosted-runner: {labels: [ubicloud-standard-2,ubicloud-standard-8,ubicloud-standard-4]}}
