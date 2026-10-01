@@ -18,36 +18,38 @@ type DocsWriteContext = {
   readOnly?: boolean;
 };
 
-function docsAtomicSources(observation: QAWriteObservation, allowed: string[], context?: DocsWriteContext): Set<string> {
-  const denied = new Set<string>();
+/** Atomic temp files proven to be native replacements of DOC_PATH; `deniedAt` names the first unmet check. */
+function docsAtomicSources(observation: QAWriteObservation, allowed: string[], context?: DocsWriteContext): Set<string> & { deniedAt?: string } {
+  const denied: Set<string> & { deniedAt?: string } = new Set<string>();
+  const deny = (line: number) => { denied.deniedAt = `docsync-observer.ts:${line}`; return denied; };
   if (!context || context.readOnly || !allowed.includes(DOC_PATH) || !observation.complete || observation.failures.length) return denied;
   const { result, fixture, scripts = [] } = context;
-  if (result.exitReason !== 'success' || !Array.isArray(result.transcript) || docsToolFailures(result, fixture, scripts).length) return denied;
+  if (result.exitReason !== 'success' || !Array.isArray(result.transcript) || docsToolFailures(result, fixture, scripts).length) return deny(27);
   const failures: string[] = [];
   const target = path.join(fixture.repo, DOC_PATH);
   const native = nativeCalls(result.transcript, failures);
   const calls = native.filter(call => ['Write', 'Edit'].includes(call.name)
     && typeof call.input.file_path === 'string' && path.resolve(fixture.repo, call.input.file_path) === target);
-  if (failures.length || !calls.length || calls.some((call, index) => call.failed || call.end <= call.start || (index > 0 && call.start <= calls[index - 1].end))) return denied;
+  if (failures.length || !calls.length || calls.some((call, index) => call.failed || call.end <= call.start || (index > 0 && call.start <= calls[index - 1].end))) return deny(33);
   const before = observation.before[DOC_PATH];
   const after = observation.after[DOC_PATH];
-  if (!/^\d+:[a-f0-9]{64}$/.test(before ?? '') || !/^\d+:[a-f0-9]{64}$/.test(after ?? '') || before.split(':')[0] !== after.split(':')[0]) return denied;
+  if (!/^\d+:[a-f0-9]{64}$/.test(before ?? '') || !/^\d+:[a-f0-9]{64}$/.test(after ?? '') || before.split(':')[0] !== after.split(':')[0]) return deny(36);
   const hash = (text: string) => createHash('sha256').update(text).digest('hex');
   const encoded = fixture.before?.contents[DOC_PATH];
-  if (typeof encoded !== 'string') return denied;
+  if (typeof encoded !== 'string') return deny(39);
   const baseline = Buffer.from(encoded, 'base64');
   let content = baseline.toString('utf8');
   let contentHash = before.split(':')[1];
-  if (baseline.toString('base64') !== encoded || !Buffer.from(content).equals(baseline) || hash(content) !== contentHash) return denied;
+  if (baseline.toString('base64') !== encoded || !Buffer.from(content).equals(baseline) || hash(content) !== contentHash) return deny(43);
   const seen = new Set([contentHash]);
   for (const call of calls) {
     const event = result.transcript[call.end];
     const payload = event.tool_use_result;
     const results = event.message.content.filter((block: any) => block?.type === 'tool_result');
-    if (results.length !== 1 || (results[0].is_error !== undefined && results[0].is_error !== false)) return denied;
+    if (results.length !== 1 || (results[0].is_error !== undefined && results[0].is_error !== false)) return deny(49);
     const omitted = !Object.hasOwn(event, 'tool_use_result');
     if (omitted) {
-      if (call.parent === null) return denied;
+      if (call.parent === null) return deny(52);
       let child = call;
       const ancestors = new Set<typeof call>();
       while (child.parent !== null) {
@@ -55,71 +57,71 @@ function docsAtomicSources(observation: QAWriteObservation, allowed: string[], c
           const blocks = result.transcript[candidate.end]?.message?.content?.filter((block: any) => block?.type === 'tool_result');
           return blocks?.length === 1 && blocks[0].tool_use_id === child.parent;
         });
-        if (parents.length !== 1) return denied;
+        if (parents.length !== 1) return deny(60);
         const parent = parents[0];
         const completion = result.transcript[parent.end];
         const block = completion.message.content.find((block: any) => block?.type === 'tool_result');
         if (!['Agent', 'Task'].includes(parent.name) || parent.failed || parent.input.run_in_background === true
           || parent.start >= child.start || parent.end <= child.end || ancestors.has(parent)
-          || (block.is_error !== undefined && block.is_error !== false)) return denied;
+          || (block.is_error !== undefined && block.is_error !== false)) return deny(66);
         if (Object.hasOwn(completion, 'tool_use_result')) {
-          if (completion.tool_use_result?.status !== 'completed') return denied;
-        } else if (parent.parent === null) return denied;
+          if (completion.tool_use_result?.status !== 'completed') return deny(68);
+        } else if (parent.parent === null) return deny(69);
         ancestors.add(parent);
         child = parent;
       }
-    } else if (!payload || payload.filePath !== target || payload.userModified !== false || payload.originalFile !== content) return denied;
+    } else if (!payload || payload.filePath !== target || payload.userModified !== false || payload.originalFile !== content) return deny(73);
     if (call.name === 'Write') {
-      if (typeof call.input.content !== 'string' || (!omitted && (payload.type !== 'update' || payload.content !== call.input.content))) return denied;
+      if (typeof call.input.content !== 'string' || (!omitted && (payload.type !== 'update' || payload.content !== call.input.content))) return deny(75);
       content = call.input.content;
     } else {
       const { old_string: old, new_string: replacement, replace_all: all = false } = call.input;
       if (typeof old !== 'string' || !old || typeof replacement !== 'string' || typeof all !== 'boolean'
-        || (!omitted && (payload.oldString !== old || payload.newString !== replacement || payload.replaceAll !== all))) return denied;
+        || (!omitted && (payload.oldString !== old || payload.newString !== replacement || payload.replaceAll !== all))) return deny(80);
       const parts = content.split(old);
-      if (parts.length < 2 || (!all && parts.length !== 2)) return denied;
+      if (parts.length < 2 || (!all && parts.length !== 2)) return deny(82);
       content = parts.join(replacement);
     }
     contentHash = hash(content);
-    if (seen.has(contentHash)) return denied;
+    if (seen.has(contentHash)) return deny(86);
     seen.add(contentHash);
   }
-  if (contentHash !== after.split(':')[1]) return denied;
+  if (contentHash !== after.split(':')[1]) return deny(89);
   const events = observation.events;
   const destinations = events.flatMap((event, index) => event.path === DOC_PATH && event.mask === 0x80 ? [index] : []);
-  if (destinations.length !== calls.length) return denied;
+  if (destinations.length !== calls.length) return deny(92);
   const sources = new Set<string>();
   let previous = -1;
   for (const destination of destinations) {
     const move = events[destination];
-    if (!Number.isInteger(move.cookie) || move.cookie <= 0 || move.cookie > 0xffffffff) return denied;
+    if (!Number.isInteger(move.cookie) || move.cookie <= 0 || move.cookie > 0xffffffff) return deny(97);
     const pair = events.flatMap((event, index) => event.cookie === move.cookie ? [index] : []);
-    if (pair.length !== 2 || pair[1] !== destination) return denied;
+    if (pair.length !== 2 || pair[1] !== destination) return deny(99);
     const source = events[pair[0]];
     if (source.mask !== 0x40 || source.path === DOC_PATH || path.dirname(source.path) !== path.dirname(DOC_PATH)
-      || Object.hasOwn(observation.before, source.path) || Object.hasOwn(observation.after, source.path) || sources.has(source.path)) return denied;
+      || Object.hasOwn(observation.before, source.path) || Object.hasOwn(observation.after, source.path) || sources.has(source.path)) return deny(102);
     const lifecycle = events.flatMap((event, index) => event.path === source.path ? [{ event, index }] : []);
-    if (lifecycle[0]?.event.mask !== 0x100 || lifecycle[0].index <= previous || lifecycle.at(-1)?.index !== pair[0]) return denied;
+    if (lifecycle[0]?.event.mask !== 0x100 || lifecycle[0].index <= previous || lifecycle.at(-1)?.index !== pair[0]) return deny(104);
     let modified = false;
     let closed = false;
     for (const { event, index } of lifecycle) {
-      if (index === pair[0]) { if (!modified || !closed) return denied; continue; }
-      if (event.cookie !== 0) return denied;
+      if (index === pair[0]) { if (!modified || !closed) return deny(108); continue; }
+      if (event.cookie !== 0) return deny(109);
       if (index === lifecycle[0].index) continue;
       if (event.mask === 0x2 && !closed) modified = true;
       else if (event.mask === 0x4 && !closed) continue;
       else if (event.mask === 0x8 && modified) closed = true;
-      else return denied;
+      else return deny(114);
     }
     sources.add(source.path);
     previous = destination;
   }
   if (events.some((event, index) => event.path === DOC_PATH && (index < destinations[0]
-    || ![0x80, 0x4, 0x400, 0x800].includes(event.mask) || (event.mask !== 0x80 && event.cookie !== 0)))) return denied;
+    || ![0x80, 0x4, 0x400, 0x800].includes(event.mask) || (event.mask !== 0x80 && event.cookie !== 0)))) return deny(120);
   for (const [index, destination] of destinations.entries()) {
     const replaced = events.slice(destination + 1, destinations[index + 1]).filter(event => event.path === DOC_PATH);
     if (replaced.filter(event => event.mask === 0x4).length !== 1 || replaced.filter(event => event.mask === 0x400).length !== 1
-      || replaced.filter(event => event.mask === 0x800).length > 1) return denied;
+      || replaced.filter(event => event.mask === 0x800).length > 1) return deny(124);
   }
   return sources;
 }
@@ -129,7 +131,8 @@ export function docsWriteFailures(observation: QAWriteObservation, allowed: stri
   if (!observation.complete) failures.push('incomplete docs write observation');
   const atomicSources = docsAtomicSources(observation, allowed, context);
   for (const file of new Set([...observation.events.map(e => e.path), ...observation.changed])) {
-    if (file !== '.qa-state/.observer-check' && !allowed.includes(file) && !atomicSources.has(file)) failures.push(`forbidden docs write: ${file}`);
+    if (file !== '.qa-state/.observer-check' && !allowed.includes(file) && !atomicSources.has(file))
+      failures.push(`forbidden docs write: ${file}${atomicSources.deniedAt && path.dirname(file) === path.dirname(DOC_PATH) ? ` (atomic replacement unproven at ${atomicSources.deniedAt})` : ''}`);
     if (allowed.includes(file) && observation.before[file] && observation.after[file] &&
         observation.before[file].split(':')[0] !== observation.after[file].split(':')[0]) failures.push(`document mode changed: ${file}`);
   }
