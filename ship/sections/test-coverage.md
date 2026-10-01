@@ -288,12 +288,13 @@ Coverage line: `Test Coverage Audit: N new code paths. M covered (Y% any test, X
 After producing the coverage diagram, write a test plan artifact so `/qa` and `/qa-only` can consume it:
 
 ```bash
-eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" && mkdir -p ~/.gstack/projects/$SLUG
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
+eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" && mkdir -p "$GSTACK_STATE_ROOT/projects/$SLUG" && echo "PROJECT_DIR: $GSTACK_STATE_ROOT/projects/$SLUG"
 USER=$(whoami)
 DATETIME=$(date +%Y%m%d-%H%M%S)
 ```
 
-Write to `~/.gstack/projects/{slug}/{user}-{branch}-ship-test-plan-{datetime}.md`:
+Write to `<PROJECT_DIR>/{user}-{branch}-ship-test-plan-{datetime}.md` (`PROJECT_DIR` printed above):
 
 ```markdown
 # Test Plan

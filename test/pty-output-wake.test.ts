@@ -207,7 +207,7 @@ process.on('SIGINT', () => process.exit(0));
 process.stdin.resume();
 process.stdout.write(${JSON.stringify(ready)} + '\\x1b[2J\\x1b[H');
 `, { mode: 0o755 });
-  const screenUrl = pathToFileURL(path.join(import.meta.dir, 'helpers/pty-screen.ts')).href;
+  const screenUrl = pathToFileURL(path.join(import.meta.dir, 'helpers/pty/screen.ts')).href;
   const runnerUrl = pathToFileURL(path.join(import.meta.dir, 'helpers/claude-pty-runner.ts')).href;
   fs.writeFileSync(worker, `import {mock} from 'bun:test';
 const {createPtyScreen} = await import(${JSON.stringify(screenUrl)});

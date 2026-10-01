@@ -21,12 +21,16 @@ import { buildHermeticEnv, getHermeticDirs, hermeticSkillsConfigDir } from './he
 
 const ROOT = path.resolve(import.meta.path, '..', '..');
 
+// The PTY harness launches from test/helpers/pty/launch.ts (claude-pty-runner.ts is its barrel).
 const RUNNERS = [
   'test/helpers/session-runner.ts',
-  'test/helpers/claude-pty-runner.ts',
+  'test/helpers/pty/launch.ts',
   'test/helpers/codex-session-runner.ts',
   'test/helpers/agent-sdk-runner.ts',
 ];
+const HERMETIC_IMPORT: Record<string, string> = { 'test/helpers/pty/launch.ts': "from '../hermetic-env'" };
+const PTY_MODULES = fs.readdirSync(path.join(ROOT, 'test/helpers/pty'), { recursive: true })
+  .map(String).filter(file => file.endsWith('.ts')).map(file => `test/helpers/pty/${file}`);
 
 function read(rel: string): string {
   return fs.readFileSync(path.join(ROOT, rel), 'utf-8');
@@ -37,7 +41,7 @@ describe('hermetic wiring tripwire', () => {
     for (const rel of RUNNERS) {
       const src = read(rel);
       expect(src.includes('hermeticChildEnv(') ).toBe(true);
-      expect(src.includes("from './hermetic-env'")).toBe(true);
+      expect(src.includes(HERMETIC_IMPORT[rel] ?? "from './hermetic-env'")).toBe(true);
     }
   });
 
@@ -45,7 +49,7 @@ describe('hermetic wiring tripwire', () => {
     // `...process.env` inside an env object is the exact pre-hermetic leak.
     // hermetic-env.ts itself legitimately READS process.env (call-time
     // snapshot); the runners must not SPREAD it into a child env.
-    for (const rel of RUNNERS) {
+    for (const rel of [...RUNNERS, ...PTY_MODULES]) {
       const offenders = read(rel)
         .split('\n')
         .map((line, i) => ({ line, n: i + 1 }))
@@ -101,7 +105,7 @@ describe('hermetic wiring tripwire', () => {
     // Zero MCP servers for hermetic children; EVALS_HERMETIC=0 must restore
     // operator MCP along with the operator env (the flag may not be
     // unconditional, or the escape hatch lies).
-    for (const rel of ['test/helpers/session-runner.ts', 'test/helpers/claude-pty-runner.ts']) {
+    for (const rel of ['test/helpers/session-runner.ts', 'test/helpers/pty/launch.ts']) {
       const src = read(rel);
       expect(src.includes('--strict-mcp-config')).toBe(true);
       const gated =

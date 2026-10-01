@@ -17,10 +17,10 @@
  */
 import { promises as fsp } from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import { mkdirSecure } from './file-permissions';
+import { resolveStateRoot } from '../../lib/state-root';
 
-const LOG_DIR = path.join(os.homedir(), '.gstack', 'security');
+const LOG_DIR = path.join(resolveStateRoot(), 'security');
 const LOG_PATH = path.join(LOG_DIR, 'attempts.jsonl');
 const RATE_CAP = 60; // writes per minute
 const WINDOW_MS = 60_000;

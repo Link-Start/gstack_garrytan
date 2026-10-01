@@ -20,16 +20,29 @@ const terminal = `class {
 
 function adapter() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pty-drain-'));
+  const screenModule = path.join(ROOT, 'test/helpers/pty/screen.ts');
+  const fixtureModule = path.join(ROOT, 'test/helpers/plan-count-fixture.ts');
   const screen = path.join(dir, 'screen.ts');
   const runner = path.join(dir, 'runner.ts');
-  fs.writeFileSync(screen, fs.readFileSync(path.join(ROOT, 'test/helpers/pty-screen.ts'), 'utf8')
-    .replace('const Terminal = await loadTerminal();', `const Terminal = ${terminal};`) +
-    `\nexport const controls = { writes: 0, disposals: 0, callback: undefined, disposeThrows: false, original: new Error('original parser rejection') };\n`);
-  fs.writeFileSync(runner, fs.readFileSync(path.join(ROOT, 'test/helpers/claude-pty-runner.ts'), 'utf8')
-    .replaceAll('fixture.cleanup();', 'globalThis.beforeFixtureCleanup?.(fixture); fixture.cleanup();')
+  fs.writeFileSync(screen, fs.readFileSync(screenModule, 'utf8')
+    .replace('const Terminal = await loadTerminal();', `const Terminal = ${terminal};`)
     .replace(/from (['"])(\.\.?\/[^'"]+)\1/g, (_match, _quote, relative) =>
-      'from ' + JSON.stringify(pathToFileURL(relative === './pty-screen' ? screen :
-        path.resolve(ROOT, 'test/helpers', relative + '.ts')).href)));
+      'from ' + JSON.stringify(pathToFileURL(path.resolve(path.dirname(screenModule), relative + '.ts')).href)) +
+    `\nexport const controls = { writes: 0, disposals: 0, callback: undefined, disposeThrows: false, original: new Error('original parser rejection') };\n`);
+  // The real harness, with the stub viewport in place of pty/screen.ts and a
+  // hook that observes each fixture just before the runner cleans it up.
+  fs.writeFileSync(runner, `import {mock} from 'bun:test';
+const screen = await import(${JSON.stringify(pathToFileURL(screen).href)});
+mock.module(${JSON.stringify(screenModule)}, () => screen);
+const fixtures = { ...await import(${JSON.stringify(pathToFileURL(fixtureModule).href)}) };
+mock.module(${JSON.stringify(fixtureModule)}, () => ({ ...fixtures, createPlanCountFixture: (...args) => {
+  const fixture = fixtures.createPlanCountFixture(...args), cleanup = fixture.cleanup;
+  fixture.cleanup = () => { globalThis.beforeFixtureCleanup?.(fixture); cleanup(); };
+  return fixture;
+} }));
+export const { launchClaudePty, runPlanSkillCounting, runPlanSkillFloorCheck } =
+  await import(${JSON.stringify(pathToFileURL(path.join(ROOT, 'test/helpers/claude-pty-runner.ts')).href)});
+`);
   return { dir, screen: pathToFileURL(screen).href, runner: pathToFileURL(runner).href };
 }
 

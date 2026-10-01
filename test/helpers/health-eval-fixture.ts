@@ -52,6 +52,7 @@ export function createHealthEvalFixture(dir: string, repoRoot: string): HealthEv
   fs.mkdirSync(path.join(dir, 'bin'), { recursive: true });
   fs.copyFileSync(path.join(repoRoot, 'bin', 'gstack-slug'), path.join(dir, 'bin', 'gstack-slug'));
   fs.chmodSync(path.join(dir, 'bin', 'gstack-slug'), 0o755);
+  fs.copyFileSync(path.join(repoRoot, 'bin', 'gstack-state-root.sh'), path.join(dir, 'bin', 'gstack-state-root.sh'));
 
   // Only redirect installed paths. The workflow and score/history rules come
   // from the real generated skill, without its unrelated shared preamble.

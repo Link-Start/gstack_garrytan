@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { generatePlanCompletionGateShip } from '../scripts/resolvers/review';
+import { generatePlanCompletionGateShip } from '../scripts/resolvers/plan-gates';
 import { generateTestBootstrap } from '../scripts/resolvers/testing';
 import { HOST_PATHS } from '../scripts/resolvers/types';
 

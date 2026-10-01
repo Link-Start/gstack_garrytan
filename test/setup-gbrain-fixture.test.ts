@@ -33,6 +33,11 @@ describe('setup-gbrain documented lock acquisition', () => {
         fs.mkdirSync(parent);
         fs.writeFileSync(lock, 'preserve lock file');
       }
+      // The block resolves the state root through the installed gstack-paths.
+      const installBin = path.join(home, '.claude', 'skills', 'gstack', 'bin');
+      fs.mkdirSync(installBin, { recursive: true });
+      for (const b of ['gstack-paths', 'gstack-state-root.sh']) fs.copyFileSync(path.join(import.meta.dir, '..', 'bin', b), path.join(installBin, b));
+      fs.chmodSync(path.join(installBin, 'gstack-paths'), 0o755);
       const source = fs.readFileSync(path.join(import.meta.dir, '..', 'setup-gbrain', 'SKILL.md.tmpl'), 'utf8');
       const script = source.match(/\*\*Concurrent-run lock\.\*\*[\s\S]*?```bash\n([\s\S]*?)\n  ```/)?.[1];
       expect(script).toBeDefined();

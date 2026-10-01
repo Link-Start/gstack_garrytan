@@ -264,7 +264,8 @@ At session start or after compaction, recover recent project context.
 ```bash
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
 _BRANCH=$(git branch --show-current 2>/dev/null | tr -cd 'a-zA-Z0-9._/-') || :; _BRANCH=${_BRANCH:-unknown}
-_PROJ="${GSTACK_HOME:-$HOME/.gstack}/projects/${SLUG:-unknown}"
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
+_PROJ="$GSTACK_STATE_ROOT/projects/${SLUG:-unknown}"
 if [ -d "$_PROJ" ]; then
   echo "--- RECENT ARTIFACTS ---"
   find "$_PROJ/ceo-plans" "$_PROJ/checkpoints" -type f -name "*.md" 2>/dev/null | xargs -r ls -t 2>/dev/null | head -3
@@ -374,7 +375,8 @@ Then build the complete version of what remains.
 
 **Eureka:** When first-principles reasoning contradicts conventional wisdom, name it and log:
 ```bash
-jq -n --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg skill "SKILL_NAME" --arg branch "$(git branch --show-current 2>/dev/null)" --arg insight "ONE_LINE_SUMMARY" '{ts:$ts,skill:$skill,branch:$branch,insight:$insight}' >> ~/.gstack/analytics/eureka.jsonl 2>/dev/null || true
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
+jq -n --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg skill "SKILL_NAME" --arg branch "$(git branch --show-current 2>/dev/null)" --arg insight "ONE_LINE_SUMMARY" '{ts:$ts,skill:$skill,branch:$branch,insight:$insight}' >> "$GSTACK_STATE_ROOT/analytics/eureka.jsonl" 2>/dev/null || true
 ```
 
 ## Completion Status Protocol
@@ -686,7 +688,7 @@ Commands:
 - `$D iterate --session /path/session.json --feedback "..." --output /path.png` — iterate
 
 **CRITICAL PATH RULE:** Design artifacts belong in `$GSTACK_STATE_ROOT/projects/$SLUG/designs/`.
-Use `bin/gstack-paths`: GSTACK_HOME → plugin storage → ~/.gstack. Keep it even if temporary; never substitute
+Use `bin/gstack-paths` (docs/state-root.md). Keep it even if temporary; never substitute
 .context/, docs/designs/ or another directory.
 These are user files, not application source.
 
@@ -788,7 +790,7 @@ First, set up the output directory. Name it after the screen/feature being desig
 
 ```bash
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
-eval "$(~/.claude/skills/gstack/bin/gstack-paths)"
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
 _DESIGN_DIR="$GSTACK_STATE_ROOT/projects/$SLUG/designs/<screen-name>-$(date +%Y%m%d)"
 mkdir -p "$_DESIGN_DIR"
 echo "DESIGN_DIR: $_DESIGN_DIR"
@@ -1126,7 +1128,7 @@ offer to generate a visual mockup showing what the improved version would look l
 
 ```bash
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
-eval "$(~/.claude/skills/gstack/bin/gstack-paths)"
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
 _DESIGN_DIR="$GSTACK_STATE_ROOT/projects/$SLUG/designs/ideal-$(date +%Y%m%d)"
 mkdir -p "$_DESIGN_DIR"
 _ROOT=$(git rev-parse --show-toplevel 2>/dev/null)

@@ -787,8 +787,9 @@ Rules:
 backslashes serialize cleanly — never use hand-rolled `echo` / `printf`.
 
 ```bash
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
-TASKS_DIR="${HOME}/.gstack/projects/${SLUG:-unknown}"
+TASKS_DIR="$GSTACK_STATE_ROOT/projects/${SLUG:-unknown}"
 mkdir -p "$TASKS_DIR"
 TASKS_FILE="$TASKS_DIR/tasks-ceo-review-$(date +%Y%m%d-%H%M%S).jsonl"
 COMMIT=$(git rev-parse HEAD 2>/dev/null || echo unknown)
@@ -1006,10 +1007,11 @@ skip Review Log, success telemetry and the next-skill handoff.
 After producing the Completion Summary, remove this branch's handoff notes only if the storage policy permits cleanup. Otherwise retain them and report that cleanup was not performed.
 
 ```bash
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
 setopt +o nomatch 2>/dev/null || true  # zsh compat
 # gstack-slug prints both SLUG and BRANCH; eval sets them in this shell.
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
-rm -f ~/.gstack/projects/$SLUG/*-$BRANCH-ceo-handoff-*.md 2>/dev/null || true
+rm -f "$GSTACK_STATE_ROOT"/projects/$SLUG/*-$BRANCH-ceo-handoff-*.md 2>/dev/null || true
 ```
 
 ## Review Log

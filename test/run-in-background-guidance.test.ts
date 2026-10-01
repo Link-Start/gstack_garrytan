@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'node:os';
 import { spawnSync } from 'node:child_process';
-import { generateCodexPlanReview } from '../scripts/resolvers/review';
+import { generateCodexPlanReview } from '../scripts/resolvers/outside-voice-steps';
 import { CODEX_MODEL_CONFIG_FLAG } from '../scripts/resolvers/constants';
 import { HOST_PATHS, type TemplateContext } from '../scripts/resolvers/types';
 import { ALL_HOST_CONFIGS } from '../hosts';

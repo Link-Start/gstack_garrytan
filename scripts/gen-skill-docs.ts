@@ -27,6 +27,7 @@ import type { HostConfig } from './host-config';
 
 const ROOT = path.resolve(import.meta.dir, '..');
 import { ALL_MODEL_NAMES, resolveModel, type Model } from './models';
+import { resolveStateRoot } from '../lib/state-root';
 
 type HostArg = Host | 'all';
 
@@ -75,7 +76,7 @@ export interface GenerationResult {
 /** Canonical generation never reads local detection state unless opted in. */
 function loadGbrainOverride(respectDetection: boolean): boolean {
   if (!respectDetection) return false;
-  const stateDir = process.env.GSTACK_HOME || path.join(process.env.HOME || '', '.gstack');
+  const stateDir = resolveStateRoot();
   try {
     const json = JSON.parse(fs.readFileSync(path.join(stateDir, 'gbrain-detection.json'), 'utf-8'));
     // Slow, remote, and locked engines are still usable (#1964/#2051/#2456).
@@ -1087,7 +1088,7 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
     }
     if (!settings.dryRun) {
       try {
-        const config = fs.readFileSync(path.join(process.env.HOME || '', '.gstack', 'config.yaml'), 'utf-8');
+        const config = fs.readFileSync(path.join(resolveStateRoot(), 'config.yaml'), 'utf-8');
         if (/^skill_prefix:\s*true/m.test(config)) {
           console.log('\nNote: skill_prefix is true. Run gstack-relink to re-apply name: patches (it patches both the install and any active gbrain render).');
         }

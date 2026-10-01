@@ -5,7 +5,9 @@ import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, realpathSync, rmSy
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runGeneration } from '../scripts/gen-skill-docs';
-import { generateAntiShortcutClause, generateCodexPlanReview, generatePlanFileReviewReport } from '../scripts/resolvers/review';
+import { generateAntiShortcutClause } from '../scripts/resolvers/spec-review';
+import { generateCodexPlanReview } from '../scripts/resolvers/outside-voice-steps';
+import { generatePlanFileReviewReport } from '../scripts/resolvers/review-dashboard';
 import { HOST_PATHS, type TemplateContext } from '../scripts/resolvers/types';
 import { generateTestCoverageAuditPlan } from '../scripts/resolvers/testing';
 import { ALL_HOST_CONFIGS } from '../hosts';

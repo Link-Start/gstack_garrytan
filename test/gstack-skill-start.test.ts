@@ -168,6 +168,7 @@ describe('gstack-skill-start behavior', () => {
       // Shadow the real bin dir by copying the script next to the poisoned tool.
       fs.copyFileSync(START, path.join(fakeBin, 'gstack-skill-start'));
       fs.chmodSync(path.join(fakeBin, 'gstack-skill-start'), 0o755);
+      fs.copyFileSync(path.join(path.dirname(START), 'gstack-state-root.sh'), path.join(fakeBin, 'gstack-state-root.sh'));
       const out = execFileSync(path.join(fakeBin, 'gstack-skill-start'), ['--skill', 't'], {
         timeout: 30_000,
         encoding: 'utf-8',

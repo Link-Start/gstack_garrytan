@@ -1,4 +1,4 @@
-import { outsideVoiceFor, outsideVoiceInvocation, outsideVoicePreflight, outsideVoiceProvenance } from './outside-voice';
+import { outsideVoiceFailurePolicy, outsideVoiceFor, outsideVoiceInvocation, outsideVoicePreflight, outsideVoiceProvenance } from './outside-voice';
 import { type TemplateContext, toShellPath } from './types';
 import { AI_SLOP_BLACKLIST, OPENAI_HARD_REJECTIONS, OPENAI_LITMUS_CHECKS, CC_BACKGROUND_DEFAULT_SINCE } from './constants';
 import { OVERUSED_FONTS_DISPLAY, BANNED_FONTS, FONTS_BODY_UI_OK, FONTS_MONO_OK, FONTS_VERIFIED_FREE, HANDOFF_COMMANDS, selectCatalog, catalogEntries, renderCatalog, detectorSlopEntries, judgmentTellEntries } from '../../lib/design-catalog';
@@ -489,9 +489,10 @@ Compare screenshots and observations across pages for:
 
 **Project-scoped:**
 \`\`\`bash
-eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" && mkdir -p ~/.gstack/projects/$SLUG
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "\${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
+eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" && mkdir -p "$GSTACK_STATE_ROOT/projects/$SLUG" && echo "PROJECT_DIR: $GSTACK_STATE_ROOT/projects/$SLUG"
 \`\`\`
-Write to: \`~/.gstack/projects/{slug}/{user}-{branch}-design-audit-{datetime}.md\`
+Write to: \`<PROJECT_DIR>/{user}-{branch}-design-audit-{datetime}.md\` (\`PROJECT_DIR\` printed above)
 
 **Baseline:** Write \`design-baseline.json\` for regression mode (temp file then \`mv\`, and a per-run copy \`design-baseline.<runId>.json\` beside it):
 \`\`\`json
@@ -852,9 +853,7 @@ ${outsideVoiceInvocation(ctx, { timeoutMs: 300000, reasoningEffort, ...(isDesign
 "${subagentPrompt}"
 
 **Error handling (all non-blocking):**
-- **Auth failure:** If stderr contains "auth", "login", "unauthorized", or "API key": "${outsideVoiceFor(ctx).label} authentication failed. Run \`${outsideVoiceFor(ctx).id === 'codex' ? 'codex login' : 'claude auth login'}\` to authenticate."
-- **Timeout:** "${outsideVoiceFor(ctx).label} timed out after 5 minutes."
-- **Empty response:** "${outsideVoiceFor(ctx).label} returned no response."
+${outsideVoiceFailurePolicy(ctx, { timeoutMinutes: 5, onTimeout: 'fallback', stderrOnEmpty: false, fallback: 'none', escape: 0 })}
 - On any ${outsideVoiceFor(ctx).label} error: proceed with ${outsideVoiceFor(ctx).nativeLabel} subagent output only${isDesignConsultation ? '; identify it as the only completed independent proposal' : ', tagged \`[single-model]\`'}.
 - If ${outsideVoiceFor(ctx).nativeLabel} subagent also fails: "Outside voices unavailable — ${isDesignConsultation ? 'continuing to Q2 with my draft direction' : 'continuing with primary review'}."
 
@@ -1150,7 +1149,7 @@ Commands:
 \`generate\` returns \`sessionFile\`; \`iterate\` requires that existing session. \`variants\` returns \`paths\` but creates no session: regenerate with an updated brief instead.` : ''}
 
 **CRITICAL PATH RULE:** Design artifacts belong in \`$GSTACK_STATE_ROOT/projects/$SLUG/designs/\`.
-Use \`bin/gstack-paths\`: GSTACK_HOME → plugin storage → ~/.gstack. Keep it even if temporary; never substitute
+Use \`bin/gstack-paths\` (docs/state-root.md). Keep it even if temporary; never substitute
 .context/, docs/designs/ or another directory.
 These are user files, not application source.`;
 }
@@ -1177,7 +1176,7 @@ Generating visual mockups of the proposed design... (say "skip" if you don't nee
 
 \`\`\`bash
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
-eval "$(~/.claude/skills/gstack/bin/gstack-paths)"
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "\${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
 _DESIGN_DIR="$GSTACK_STATE_ROOT/projects/$SLUG/designs/mockup-$(date +%Y%m%d)"
 mkdir -p "$_DESIGN_DIR"
 echo "DESIGN_DIR: $_DESIGN_DIR"
@@ -1384,7 +1383,8 @@ export function generateTasteProfile(ctx: TemplateContext): string {
 \`\`\`bash
 eval "$("${ctx.paths.binDir}/gstack-slug" 2>/dev/null)"
 [ -n "\${SLUG:-}" ] || { echo "NO_TASTE_PROFILE"; exit 0; }
-_TASTE_PROFILE=~/.gstack/projects/$SLUG/taste-profile.json
+eval "$("${ctx.paths.binDir}/gstack-paths")"; : "\${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
+_TASTE_PROFILE="$GSTACK_STATE_ROOT/projects/$SLUG/taste-profile.json"
 if [ -f "$_TASTE_PROFILE" ]; then
   # Schema v1: { dimensions: { fonts, colors, layouts, aesthetics }, sessions: [] }
   # Each dimension has approved[] and rejected[] entries with

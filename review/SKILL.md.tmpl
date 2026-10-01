@@ -270,8 +270,8 @@ toward AUTO-FIX.
 
 **Test stub override:** Any finding that has a `test_stub` field, from a specialist or exploratory QA,
 is reclassified as ASK regardless of its original classification. When presenting the ASK
-item, show the proposed test file path and the test code. The user approves or skips the
-test creation. If approved, follow Step 5d's regression-before-repair order. Derive the test file path from
+item, show the proposed test file path and the test code. Step 5c's A) Fix writes the test and
+repair in Step 5d's regression-before-repair order; B) Skip skips both; the defect stays unresolved. Derive the test file path from
 the finding's `path` using project conventions (`spec/` for RSpec, `__tests__/` for
 Jest/Vitest, `test_` prefix for pytest, `_test.go` suffix for Go). If the test file
 already exists, append the new test.

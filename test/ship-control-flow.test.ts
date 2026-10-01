@@ -4,7 +4,9 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { ALL_HOST_CONFIGS } from '../hosts';
-import { generateAdversarialStep, generatePlanCompletionGateShip, generateReviewDashboard } from '../scripts/resolvers/review';
+import { generateAdversarialStep } from '../scripts/resolvers/outside-voice-steps';
+import { generatePlanCompletionGateShip } from '../scripts/resolvers/plan-gates';
+import { generateReviewDashboard } from '../scripts/resolvers/review-dashboard';
 import { HOST_PATHS } from '../scripts/resolvers/types';
 
 const read = (file: string) => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');

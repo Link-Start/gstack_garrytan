@@ -50,6 +50,7 @@ import { E2E_KINDS, E2E_TIERS, E2E_TOUCHFILES, GLOBAL_TOUCHFILES, LLM_JUDGE_TOUC
 import { CASE_QUARANTINE, EVAL_POLICY } from '../test/helpers/periodic-exclude-data';
 import { matchGlob } from '../test/helpers/test-selection';
 import { CASE_TEST_NAMES } from './test-paid-shards';
+import { resolveStateRoot } from '../lib/state-root';
 
 interface TestSeries {
   name: string;
@@ -674,7 +675,7 @@ if (import.meta.main) {
     try {
       const runs = listWeeklyRuns({ repo, workflow, branches: [...new Set([branch, 'main'])], limit: runsLimit });
       weeklyRuns = runs.map(run => run.createdAt);
-      const cacheDir = path.join(os.homedir(), '.gstack', 'eval-pass-rates-cache', repo.replace('/', '-'));
+      const cacheDir = path.join(path.resolve(resolveStateRoot()), 'eval-pass-rates-cache', repo.replace('/', '-'));
       const match = backfill
         ? (name: string) => name.startsWith('trial-outcomes') || /^(paid-slice-\d+|gate-census-\d+)(-a\d+)?$/.test(name)
         : (name: string) => name.startsWith('trial-outcomes');

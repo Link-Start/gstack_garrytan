@@ -43,6 +43,7 @@ function scaffoldFixture(workDir: string): { workDir: string; stateRoot: string;
     'gstack-codex-session-import',
     'gstack-distill-free-text',
     'gstack-distill-apply',
+    'gstack-state-root.sh',
   ]) {
     const src = path.join(ROOT, 'bin', script);
     if (fs.existsSync(src)) {
@@ -65,10 +66,10 @@ function scaffoldFixture(workDir: string): { workDir: string; stateRoot: string;
     if (fs.existsSync(src)) fs.copyFileSync(src, path.join(scriptsDir, f));
   }
 
-  // Both imports are resolved relative to the copied install, not the source checkout.
+  // These imports are resolved relative to the copied install, not the source checkout.
   const libDir = path.join(workDir, 'lib');
   fs.mkdirSync(libDir, { recursive: true });
-  for (const file of ['jsonl-store.ts', 'is-conductor.ts']) {
+  for (const file of ['jsonl-store.ts', 'is-conductor.ts', 'state-root.ts']) {
     fs.copyFileSync(path.join(ROOT, 'lib', file), path.join(libDir, file));
   }
 

@@ -11,10 +11,10 @@
  */
 
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { mkdirSecure } from './file-permissions';
 import { safeUnlinkQuiet } from './error-handling';
+import { readConfigKey, resolveStateRoot } from '../../lib/state-root';
 
 export interface BrowseConfig {
   projectDir: string;
@@ -193,39 +193,26 @@ export function readVersionHash(execPath: string = process.execPath): string | n
   }
 }
 
-/**
- * Resolve the gstack home directory.
- *
- * Honors the existing convention used by telemetry.ts and domain-skills.ts:
- *   1. GSTACK_HOME env (explicit override)
- *   2. $HOME/.gstack (default)
- */
+/** The gstack state root: delegates to the shared chain in lib/state-root.ts. */
 export function resolveGstackHome(): string {
-  return process.env.GSTACK_HOME || path.join(os.homedir(), '.gstack');
+  return resolveStateRoot();
 }
 
 /**
- * Read one key from the flat-YAML config store at <gstack home>/config.yaml
- * (the shape bin/gstack-config writes: `key: value` lines). Tolerates
- * optional single/double quotes around the value and a trailing `# comment`.
- * Returns the unquoted value string, or null when the file is missing or
- * unreadable or the key is absent.
+ * Read one key from the flat-YAML config store via readConfigKey (the same
+ * reader bin/gstack-config uses, including the most-restrictive merge for
+ * privacy keys such as telemetry). Tolerates optional single/double quotes
+ * around the value and a trailing `# comment`. Returns the unquoted value
+ * string, or null when the file is missing or unreadable or the key is absent.
  *
  * Single source of truth for flat-YAML key reads — isPairAgentEnabled
  * (pair_agent) and telemetry.ts (telemetry tier) both route through it so
  * the two consent gates can never drift on parsing semantics.
  */
 export function readGstackConfigYamlKey(key: string): string | null {
-  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  try {
-    const yaml = fs.readFileSync(path.join(resolveGstackHome(), 'config.yaml'), 'utf-8');
-    // Last match wins: bin/gstack-config's `get` reads duplicates with
-    // `tail -1`, and both surfaces must agree on the same line.
-    const all = [...yaml.matchAll(new RegExp(`^\\s*${escaped}\\s*:\\s*['"]?([^'"#\\n]*?)['"]?\\s*(?:#.*)?$`, 'gm'))];
-    return all.length > 0 ? all[all.length - 1][1] : null;
-  } catch {
-    return null;
-  }
+  const raw = readConfigKey(key);
+  if (raw === null) return null;
+  return raw.replace(/\s*#.*$/, '').trim().replace(/^(['"])(.*)\1$/, '$2');
 }
 
 /**

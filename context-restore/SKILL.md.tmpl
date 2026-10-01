@@ -68,7 +68,7 @@ Parse the user's input:
 
 ```bash
 {{SLUG_SETUP}}
-eval "$(~/.claude/skills/gstack/bin/gstack-paths)"
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
 CHECKPOINT_DIR="$GSTACK_STATE_ROOT/projects/$SLUG/checkpoints"
 if [ ! -d "$CHECKPOINT_DIR" ]; then
   echo "NO_CHECKPOINTS"

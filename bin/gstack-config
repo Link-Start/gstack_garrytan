@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# gstack-config — read/write ~/.gstack/config.yaml
+# gstack-config — read/write <state root>/config.yaml (default ~/.gstack/config.yaml)
 #
 # Usage:
 #   gstack-config get <key>          — read a config value (falls back to DEFAULTS)
@@ -10,14 +10,20 @@
 #   gstack-config list               — show all config (values + defaults)
 #   gstack-config defaults           — show just the defaults table
 #
-# Env overrides (for testing):
-#   GSTACK_STATE_ROOT — override ~/.gstack state directory (highest priority,
-#                       matches D16 cathedral isolation convention)
-#   GSTACK_HOME       — override ~/.gstack state directory (aligns with writer scripts)
-#   GSTACK_STATE_DIR  — legacy alias for GSTACK_HOME (kept for backwards compat)
+# State root: GSTACK_STATE_ROOT → GSTACK_HOME → GSTACK_STATE_DIR →
+# CLAUDE_PLUGIN_DATA (only when CLAUDE_PLUGIN_ROOT contains "gstack") →
+# ~/.gstack (bin/gstack-state-root.sh). Set GSTACK_HOME to relocate state;
+# GSTACK_STATE_ROOT is gstack-paths' output, also honored as input;
+# GSTACK_STATE_DIR is a legacy alias.
+# Privacy keys (telemetry, memorable_recall, codex_reviews, update_check) take
+# the most restrictive value across the resolved root and ~/.gstack; `set`
+# reports which root received the value and which root still overrides it.
+# Docs: https://github.com/garrytan/gstack/blob/main/docs/state-root.md
 set -euo pipefail
 
-STATE_DIR="${GSTACK_STATE_ROOT:-${GSTACK_HOME:-${GSTACK_STATE_DIR:-$HOME/.gstack}}}"
+. "$(dirname "$0")/gstack-state-root.sh" 2>/dev/null || { echo "$0: cannot resolve the gstack state root: $(dirname "$0")/gstack-state-root.sh is missing. fix: reinstall with ./setup or /gstack-upgrade (docs/state-root.md)" >&2; exit 1; }
+gstack_state_root_select
+STATE_DIR="$_gstack_sr_root"
 CONFIG_FILE="$STATE_DIR/config.yaml"
 
 # Swap a freshly-rendered tmp dir into the live render location (#2569
@@ -329,14 +335,27 @@ resolve_user_slug() {
   printf '%s' "$_slug"
 }
 
+# The one reader (bin/gstack-state-root.sh): last `key:` line in the resolved
+# root, except privacy keys, which take the most restrictive value across roots.
 read_config_value() {
-  local key="$1"
-  if [ ! -f "$CONFIG_FILE" ]; then
-    return 0
-  fi
-  grep -E "^${key}:" "$CONFIG_FILE" 2>/dev/null \
-    | tail -1 \
-    | sed -E "s/^${key}:[[:space:]]*//; s/[[:space:]]+$//"
+  gstack_read_config_key "$1"
+}
+
+_STATE_DOC="https://github.com/garrytan/gstack/blob/main/docs/state-root.md"
+_SELF="$(cd "$(dirname "$0")" && pwd)/gstack-config"
+
+# One line when the root-selecting variables name different directories.
+report_root_disagreement() {
+  local _v _val _set="" _distinct=""
+  for _v in GSTACK_STATE_ROOT GSTACK_HOME GSTACK_STATE_DIR; do
+    eval "_val=\${$_v:-}"
+    [ -n "$_val" ] || continue
+    _set="$_set $_v=$_val"
+    case " $_distinct " in *" $_val "*) ;; *) _distinct="$_distinct $_val" ;; esac
+  done
+  set -- $_distinct
+  [ "$#" -gt 1 ] || return 0
+  echo "# note: root-selecting variables disagree:$_set; using $STATE_DIR ($_gstack_sr_var wins). Explain: $(dirname "$_SELF")/gstack-paths --explain ($_STATE_DOC)"
 }
 
 case "${1:-}" in
@@ -470,6 +489,12 @@ case "${1:-}" in
     else
       echo "${KEY}: ${SAFE_VALUE}" >> "$CONFIG_FILE"
     fi
+    # Report only when another root still overrides the value just written.
+    gstack_config_select "$KEY"
+    if [ -n "$_gstack_cfg_root" ] && [ "$_gstack_cfg_root" != "$STATE_DIR" ] && [ "$_gstack_cfg_value" != "$SAFE_VALUE" ]; then
+      echo "gstack-config: set $KEY in $CONFIG_FILE, but $KEY is still '$_gstack_cfg_value': $_gstack_cfg_root/config.yaml sets that more restrictive value, and for privacy keys the most restrictive value across state roots wins." >&2
+      echo "fix: GSTACK_STATE_ROOT='$_gstack_cfg_root' $_SELF set $KEY $SAFE_VALUE ($_STATE_DOC)" >&2
+    fi
     # Auto-relink skills when prefix setting changes (skip during setup to avoid recursive call)
     if [ "$KEY" = "skill_prefix" ] && [ -z "${GSTACK_SETUP_RUNNING:-}" ]; then
       GSTACK_RELINK="$(dirname "$0")/gstack-relink"
@@ -482,15 +507,19 @@ case "${1:-}" in
     fi
     echo ""
     echo "# ─── Active values (including defaults for unset keys) ───"
+    report_root_disagreement
     for KEY in proactive routing_declined telemetry auto_upgrade update_check \
                skill_prefix explain_level \
                codex_reviews gstack_contributor skip_eng_review workspace_root \
                artifacts_sync_mode artifacts_sync_mode_prompted plan_tune_hooks \
                timeline_stop_hook design_detector design_detector_install_prompted memorable_recall; do
-      VALUE=$(read_config_value "$KEY" || true)
+      gstack_config_select "$KEY"
+      VALUE="$_gstack_cfg_value"
       SOURCE="default"
       if [ -n "$VALUE" ]; then
         SOURCE="set"
+        _gstack_config_rank "$KEY" x
+        [ -n "$_gstack_cfg_rank" ] && SOURCE="set, $_gstack_cfg_root"
       else
         VALUE=$(lookup_default "$KEY")
       fi
@@ -569,7 +598,7 @@ case "${1:-}" in
         # worktree — bin/dev-setup owns that flow), and look like a real
         # gstack clone.
         INSTALL_DIR="$HOME/.claude/skills/gstack"
-        RENDER_DIR="${GSTACK_USER_RENDER_DIR:-${GSTACK_HOME:-$HOME/.gstack}/render/claude}"
+        RENDER_DIR="${GSTACK_USER_RENDER_DIR:-$STATE_DIR/render/claude}"
         if [ ! -d "$INSTALL_DIR" ]; then
           echo "No global install at $INSTALL_DIR — nothing to render. (Dev workspaces get blocks via bin/dev-setup.)"
         elif [ -L "$INSTALL_DIR" ]; then

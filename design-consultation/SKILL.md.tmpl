@@ -89,9 +89,10 @@ A `PRODUCT.md` (impeccable's product-context file) already answers the product q
 Look for office-hours output:
 
 ```bash
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
 setopt +o nomatch 2>/dev/null || true  # zsh compat
 {{SLUG_EVAL}}
-ls ~/.gstack/projects/$SLUG/*office-hours* 2>/dev/null | head -5
+ls "$GSTACK_STATE_ROOT"/projects/$SLUG/*office-hours* 2>/dev/null | head -5
 ls .context/*office-hours* .context/attachments/*office-hours* 2>/dev/null | head -5
 ```
 

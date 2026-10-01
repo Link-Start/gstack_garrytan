@@ -64,7 +64,7 @@ describe('paid/free dependency boundary', () => {
     expect(paid.length).toBeGreaterThan(0);
     const all = workflowJudgeDependencies(ROOT, paid);
     for (const dependencies of [runner, all]) {
-      expect(dependencies).toContain('scripts/test-strict-output.ts');
+      expect(dependencies).toContain('scripts/lib/shard-engine.ts');
       expect(dependencies).toContain('test/helpers/test-selection.ts');
       expect(dependencies).not.toContain('scripts/eval-flake-rank.ts');
       for (const freeOnly of FREE_ONLY_PR_FILES) expect(dependencies).not.toContain(freeOnly);

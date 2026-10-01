@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.91.10.0] - 2026-09-30
+## [1.91.12.0] - 2026-10-01
 
 **Weekly evals finish in minutes, not hours, and a red now means something.**
 **Two real crash bugs fixed, and product code typechecks clean in CI.**
@@ -64,6 +64,43 @@ Run `bun run typecheck` and `bun run typecheck:test` before you push; both are f
 - Open PRs touching `lib/cso` should run `bun run format:cso` before rebasing.
 - Builds on the typecheck work in #2447, contributed by @laddtnov.
 - Coordinated with #2994 (v1.91.8.0), which retired the never-green finding-count evals this wave had been repairing.
+## [1.91.11.0] - 2026-09-30
+
+gstack now looks up its state folder one way everywhere, and the five most copy-pasted or oversized parts of the codebase each have a single owner. Before, about 50 scripts, hooks and libraries each resolved the state folder with their own rule, and the rules disagreed. If you set `GSTACK_HOME`, `GSTACK_STATE_DIR` or `GSTACK_STATE_ROOT`, telemetry, analytics, update-check snoozes, the egress ledger and hook logs now all land in the folder you chose. Nothing is moved for you. Run `~/.claude/skills/gstack/bin/gstack-paths --explain` to see the active folder and whether `~/.gstack` still holds older state; [docs/state-root.md](docs/state-root.md) has the move recipe.
+
+| Hotspot | Before | After |
+| --- | ---: | ---: |
+| Code files with a hand-rolled `${GSTACK_*:-…}` chain | 48 | 2 (the bash owner and one allowlisted partial-upgrade fallback) |
+| `browse/src/server.ts` lines (`buildFetchHandler` alone) | 3,464 (1,560) | 2,224 (~350) |
+| `test/helpers/claude-pty-runner.ts` lines | 5,047 | 30 (barrel over `test/helpers/pty/*`) |
+| `scripts/resolvers/review.ts` lines | 1,921 | removed (5 modules, largest 771) |
+| Shard spawn/kill/sandbox implementations | 2 | 1 (`scripts/lib/shard-engine.ts`) |
+
+### Changed
+
+- **One state-root rule.** Every script, hook and skill resolves state as `GSTACK_STATE_ROOT` → `GSTACK_HOME` → `GSTACK_STATE_DIR` → `CLAUDE_PLUGIN_DATA` (only for the gstack plugin) → `~/.gstack`. Skill bash blocks stop with a reinstall message if the resolver is missing, instead of writing under `/`.
+- **Privacy opt-outs never get looser.** `telemetry`, `memorable_recall`, `codex_reviews`, `update_check` and trust-policy denies take the most restrictive value across the active folder and `~/.gstack`. `gstack-config set` says when another folder still overrides you and prints the command that fixes it, and `gstack-config list` shows which folder each merged key came from.
+- **Uninstall deletes state only at `~/.gstack`.** `gstack-uninstall` refuses (exit 2) when that path resolves to `/`, your home, the gstack checkout or the current repository. For a relocated folder it leaves the folder in place and prints the exact removal command.
+- **Outside-voice fallbacks read the same in every skill.** `/plan-devex-review` now also treats an "API key" error as an authentication failure, `/office-hours` names its fallback subagent like the other skills, and the `/review` and `/ship` adversarial pass says "timed out after 9 minutes" (a timed-out pass is still missing coverage).
+- `/review` and `/ship` exploratory QA now say how required plan checks behave once the 5-minute smoke clock expires: they and their revalidation keep running on a per-command `--timeout-ms` and still publish checkpoints, while a smoke recheck after expiry is reported not-run. In `/review`, skipping a finding that carries a proposed test skips both the test and the fix, and the defect stays unresolved.
+- After a revert of this release, state written to a non-default folder while it was live stays in that folder.
+
+### Fixed
+
+- A pair-agent setup key that had not been exchanged yet was accepted as a bearer token on the browse daemon's `/command`, `/batch` and `/file`. A setup key now authenticates only the `/connect` exchange.
+
+### For contributors
+
+- **State root:** `lib/state-root.ts` (`resolveStateRoot`, `readConfigKey`) and its bash twin `bin/gstack-state-root.sh` (builtins only) own the chain. A parity table runs every row through both with `PATH` empty, Windows rows included. `test/state-root-ratchet.test.ts` rejects new hand-rolled chains, and `test-setup.ts` strips inherited `GSTACK_STATE_ROOT` / `GSTACK_STATE_DIR` so ambient variables cannot leak into tests. `hosts/claude/hooks/hook-log.ts` is the five hooks' one error-log writer (0600).
+- **Browse routes:** the daemon's HTTP routes are one declared table (`browse/src/routes/table.ts`: method, path, auth kind, listener surface), with one auth gate, one denial per auth kind, and handlers in `browse/src/routes/*.ts`. A black-box matrix over every route, both listeners and five credential types passed on the old server and passes unchanged on the new one. The route tests now send real requests instead of grepping `server.ts`, and `browse/test/server-route-dispatch-ratchet.test.ts` keeps dispatch inside the table.
+- **Shard engine:** `scripts/test-strict-output.ts` grew into `scripts/lib/shard-engine.ts` (process-group spawn, wall timeout and group kill, strict Bun verdicts, per-shard tmp and Chromium sandbox, logs, duration seeds, flag loop), and both runners use it. Lane policy stays per lane. A seven-outcome fixture corpus recorded from the old runners pins identical verdicts, and paid `--list` output is byte-identical. A timed-out free shard now stops reading at its deadline, as the paid lane already did.
+- **PTY harness:** `test/helpers/claude-pty-runner.ts` is a barrel over `test/helpers/pty/*` (screen, launch, classify, auq, plan-native, boundaries, judge). One `runPtySession` loop drives the observation, counting and floor runners. A scripted fake PTY driver (`pty/fake-session.ts`) with an injectable clock runs each runner deterministically, and the unit test is split along the same modules. Tests keep importing the barrel.
+- **Review resolvers:** `scripts/resolvers/review.ts` is split into `review-dashboard.ts`, `plan-gates.ts`, `spec-review.ts`, `outside-voice-steps.ts` and `review-scope.ts`. Generated output is byte-identical except the fallback wording above, which now comes from `outsideVoiceFailurePolicy()` in `outside-voice.ts`; `test/outside-voice-failure-policy.test.ts` rejects hand-written copies.
+- **Ratchets:** `test/module-size-ratchet.test.ts` keeps the new owner modules at or under 800 lines and 150 lines per function, and stops the residual files (`server.ts`, both runners) from growing. `test/touchfiles.test.ts` checks that every moved module still selects the paid evals its source file selected (goldens in `test/fixtures/touchfile-moved-code/`, recorded before the move).
+- **Budgets:** the guarded `gstack-paths` line in always-loaded preambles moved a few budgets to their measured values, each with its derivation recorded: carve-guards for ship (1.397 → 1.404), plan-ceo-review skeleton (80,150 → 80,850 bytes), plan-eng-review (1.169 → 1.174), design-consultation (1.08 → 1.085) and qa (1.095 → 1.102), and the `unfreeze` eager ceiling (393 → 448 tokens).
+- **Webhook fix eval:** `qa-functional-webhook-fix` no longer asks the model to rerun all eight webhook scenarios after its repair; the harness already reruns all eight on the repaired source, and the report-only webhook eval still requires eight-scenario coverage. The fix eval now asks for the same post-repair probes as the CLI fix eval, which brings a passing run from about 244s to 133-214s of its 285s budget (3/3 local passes).
+- **Deferred:** `TODOS.md` "P3: next refactor wave" lists the hotspots this wave did not touch and the behavior bugs it found and left alone.
+
 ## [1.91.9.0] - 2026-09-29
 
 Every gstack workflow that proposes, writes, reviews or ships tests now applies one test value bar: a test earns its place by protecting behavior a real regression would break, and test count is not a goal. `/ship`'s coverage gate counts only tests that clear that bar, and the new `/test-audit` sweeps existing tests for ones that cost more than they protect.

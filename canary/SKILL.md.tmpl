@@ -224,8 +224,9 @@ Per-page and overall status: BROKEN if any confirmed CRITICAL alert occurred; ot
 Log the result for the review dashboard:
 
 ```bash
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
 {{SLUG_EVAL}}
-mkdir -p ~/.gstack/projects/$SLUG
+mkdir -p "$GSTACK_STATE_ROOT"/projects/$SLUG
 ```
 
 Write a JSONL entry: `{"skill":"canary","timestamp":"<ISO>","status":"<HEALTHY/DEGRADED/BROKEN>","url":"<url>","duration_min":<N>,"alerts":<N>}`

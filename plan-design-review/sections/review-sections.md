@@ -333,8 +333,9 @@ Rules:
 backslashes serialize cleanly — never use hand-rolled `echo` / `printf`.
 
 ```bash
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
-TASKS_DIR="${HOME}/.gstack/projects/${SLUG:-unknown}"
+TASKS_DIR="$GSTACK_STATE_ROOT/projects/${SLUG:-unknown}"
 mkdir -p "$TASKS_DIR"
 TASKS_FILE="$TASKS_DIR/tasks-design-review-$(date +%Y%m%d-%H%M%S).jsonl"
 COMMIT=$(git rev-parse HEAD 2>/dev/null || echo unknown)

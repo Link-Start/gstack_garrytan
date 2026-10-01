@@ -285,5 +285,9 @@ bun run skill:check      # health dashboard for all skills
 - Run `bun run gen:skill-docs --host codex` to regenerate Codex-specific output.
 - Browser steps in skills are `aside repl` scripts per `scripts/resolvers/aside.ts` (Aside first), each with a `$B` equivalent for the fallback engine — `$B <command>` is the browse binary and is a legitimate tool when the Aside probe does not print `READY`. Local HTML renders through `bin/gstack-render.ts`, which picks the same way.
 - Safety skills (careful, freeze, guard) use inline advisory prose — always confirm before destructive operations.
-- State paths resolve via `bin/gstack-paths` (sourced via `eval "$(...)"`). Honors `GSTACK_HOME`, `CLAUDE_PLUGIN_DATA`, `CLAUDE_PLANS_DIR`.
+- State paths resolve through one chain owned by `lib/state-root.ts` and its sourced bash twin `bin/gstack-state-root.sh` (`GSTACK_STATE_ROOT` → `GSTACK_HOME` → `GSTACK_STATE_DIR` → gstack's `CLAUDE_PLUGIN_DATA` → `~/.gstack`; see docs/state-root.md). Skill prose uses `eval "$(bin/gstack-paths)"` with its `${GSTACK_STATE_ROOT:?…}` guard; `test/state-root-ratchet.test.ts` rejects hand-rolled chains.
+- Browse daemon HTTP routes are entries in `browse/src/routes/table.ts` (its header shows how to add one); never dispatch on `url.pathname` in `server.ts`.
+- Both test lanes run shards through `scripts/lib/shard-engine.ts`; the free and paid runners hold lane policy only. PTY harness code lives in `test/helpers/pty/*` behind the `claude-pty-runner.ts` barrel.
+- Outside-voice failure prose (auth, timeout, empty, fallback) comes only from `outsideVoiceFailurePolicy()` in `scripts/resolvers/outside-voice.ts`.
+- `test/module-size-ratchet.test.ts` keeps refactored owner modules at or under 800 lines (150 per function) and residual files from growing.
 - The `claude` CLI binary resolves via `lib/claude-bin.ts` (re-exported from `browse/src/claude-bin.ts` for browse internals; `Bun.which()` + `GSTACK_CLAUDE_BIN` override). Set `GSTACK_CLAUDE_BIN=wsl` plus `GSTACK_CLAUDE_BIN_ARGS='["claude"]'` to run Claude through WSL on Windows.

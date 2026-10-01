@@ -621,6 +621,8 @@ Data is stored in [Supabase](https://supabase.com) (open source Firebase alterna
 
 **Stale install?** Run `/gstack-upgrade` — or set `auto_upgrade: true` in `~/.gstack/config.yaml`
 
+**State in the wrong place, or a setting that won't stick?** `~/.claude/skills/gstack/bin/gstack-paths --explain` shows which directory gstack uses for its state and why. See [docs/state-root.md](docs/state-root.md).
+
 **Want shorter commands?** `cd ~/.claude/skills/gstack && ./setup --no-prefix` — switches from `/gstack-qa` to `/qa`. Your choice is remembered for future upgrades.
 
 **Want namespaced commands?** `cd ~/.claude/skills/gstack && ./setup --prefix` — switches from `/qa` to `/gstack-qa`. Useful if you run other skill packs alongside gstack.

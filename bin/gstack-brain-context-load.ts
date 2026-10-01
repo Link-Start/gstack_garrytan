@@ -38,6 +38,7 @@ import { existsSync, readFileSync, statSync, readdirSync, accessSync, constants 
 import { join, dirname, basename, resolve, delimiter } from "path";
 import { spawnSync } from "child_process";
 import { homedir } from "os";
+import { resolveStateRoot } from "../lib/state-root";
 
 import { parseSkillManifest, type GbrainManifest, type GbrainManifestQuery, withErrorContext } from "../lib/gstack-memory-helpers";
 
@@ -67,7 +68,7 @@ interface QueryResult {
 // ── Constants ──────────────────────────────────────────────────────────────
 
 const HOME = homedir();
-const GSTACK_HOME = process.env.GSTACK_HOME || join(HOME, ".gstack");
+const GSTACK_HOME = resolveStateRoot();
 // 500ms hard cap per Section 1C; overridable for slow/loaded environments
 // (test harnesses under CI load, cold CLI starts).
 const MCP_TIMEOUT_MS = Math.max(1, parseInt(process.env.GSTACK_BRAIN_TIMEOUT_MS || "", 10) || 500);

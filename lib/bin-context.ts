@@ -7,8 +7,8 @@
 
 import { spawnSync } from "child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "fs";
-import { homedir } from "os";
 import { basename, dirname, join } from "path";
+import { resolveStateRoot } from "./state-root";
 
 /** Keep the slug inside the [a-zA-Z0-9._-] alphabet gstack-slug promises (`tr -cd`). */
 function sanitizeSlug(s: string): string {
@@ -148,7 +148,7 @@ export function outermostRemoteRepo(startDir: string): { root: string; url: stri
  *   4. Project root's basename; else basename(cwd) for plain non-project folders.
  */
 export function slugFromEnvironment(gstackHome?: string, cwd: string = process.cwd()): string {
-  const home = gstackHome || process.env.GSTACK_HOME || join(homedir(), ".gstack");
+  const home = gstackHome || resolveStateRoot();
   const cacheDir = join(home, "slug-cache");
   const cacheFile = join(cacheDir, toMsysPath(cwd).replace(/\//g, "_"));
 

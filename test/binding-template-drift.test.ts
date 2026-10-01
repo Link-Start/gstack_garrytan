@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test';
 import * as fs from 'fs';
 import * as path from 'path';
-import { generateReviewDashboard } from '../scripts/resolvers/review';
+import { generateReviewDashboard } from '../scripts/resolvers/review-dashboard';
 import { HOST_PATHS } from '../scripts/resolvers/types';
 import { ALL_HOST_CONFIGS } from '../hosts';
 

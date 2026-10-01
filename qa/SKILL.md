@@ -242,7 +242,8 @@ At session start or after compaction, recover recent project context.
 ```bash
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
 _BRANCH=$(git branch --show-current 2>/dev/null | tr -cd 'a-zA-Z0-9._/-') || :; _BRANCH=${_BRANCH:-unknown}
-_PROJ="${GSTACK_HOME:-$HOME/.gstack}/projects/${SLUG:-unknown}"
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
+_PROJ="$GSTACK_STATE_ROOT/projects/${SLUG:-unknown}"
 if [ -d "$_PROJ" ]; then
   echo "--- RECENT ARTIFACTS ---"
   find "$_PROJ/ceo-plans" "$_PROJ/checkpoints" -type f -name "*.md" 2>/dev/null | xargs -r ls -t 2>/dev/null | head -3
@@ -352,7 +353,8 @@ Then build the complete version of what remains.
 
 **Eureka:** When first-principles reasoning contradicts conventional wisdom, name it and log:
 ```bash
-jq -n --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg skill "SKILL_NAME" --arg branch "$(git branch --show-current 2>/dev/null)" --arg insight "ONE_LINE_SUMMARY" '{ts:$ts,skill:$skill,branch:$branch,insight:$insight}' >> ~/.gstack/analytics/eureka.jsonl 2>/dev/null || true
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
+jq -n --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg skill "SKILL_NAME" --arg branch "$(git branch --show-current 2>/dev/null)" --arg insight "ONE_LINE_SUMMARY" '{ts:$ts,skill:$skill,branch:$branch,insight:$insight}' >> "$GSTACK_STATE_ROOT/analytics/eureka.jsonl" 2>/dev/null || true
 ```
 
 ## Completion Status Protocol
@@ -579,9 +581,10 @@ Prefer the richer of recent project test plans and plans in conversation over gi
 
 1. **Project-scoped test plans:** Find the latest for this repo:
    ```bash
+   eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
    setopt +o nomatch 2>/dev/null || true  # zsh compat
    eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
-   ls -t ~/.gstack/projects/$SLUG/*-test-plan-*.md 2>/dev/null | head -1
+   ls -t "$GSTACK_STATE_ROOT"/projects/$SLUG/*-test-plan-*.md 2>/dev/null | head -1
    ```
 2. **Conversation context:** Prior `/plan-eng-review` or `/plan-ceo-review` test plans.
 3. Fall back to git diff only if neither exists.
@@ -748,9 +751,10 @@ Write the Output Structure report locally and copy the same content to project c
 
 **Project-scoped:** Write test outcome artifact for cross-session context:
 ```bash
-eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" && mkdir -p ~/.gstack/projects/$SLUG
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
+eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" && mkdir -p "$GSTACK_STATE_ROOT/projects/$SLUG" && echo "PROJECT_DIR: $GSTACK_STATE_ROOT/projects/$SLUG"
 ```
-Write to `~/.gstack/projects/{slug}/{user}-{branch}-test-outcome-{datetime}.md`
+Write to `<PROJECT_DIR>/{user}-{branch}-test-outcome-{datetime}.md` (`PROJECT_DIR` printed above)
 
 **Per-issue additions:**
 - Fix Status: verified / best-effort / reverted / deferred

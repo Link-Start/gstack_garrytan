@@ -1,4 +1,4 @@
-import { generateAdversarialStep } from '../scripts/resolvers/review';
+import { generateAdversarialStep } from '../scripts/resolvers/outside-voice-steps';
 import { RESOLVERS } from '../scripts/resolvers';
 import { HOST_PATHS } from '../scripts/resolvers/types';
 import { describe, test, expect } from 'bun:test';
@@ -524,7 +524,7 @@ describe('codex review-mode section Step 2A: PROMPT + --base mutual exclusion gu
 // which downstream reads as "Codex reviewed and found nothing".
 describe('codex timeout wrapper: /review + /ship diff passes', () => {
   const WRAPPED_SITES = [
-    'scripts/resolvers/review.ts', // generator (source of truth)
+    'scripts/resolvers/outside-voice-steps.ts', // generator (source of truth)
     'review/sections/adversarial.md', // review section (Step 4.8 carved out of the skeleton)
     'ship/sections/adversarial.md', // ship section source
   ];
@@ -534,7 +534,7 @@ describe('codex timeout wrapper: /review + /ship diff passes', () => {
   const BASH_GATE_MS = 600000;
 
   for (const relPath of WRAPPED_SITES) {
-    const read = () => relPath === 'scripts/resolvers/review.ts'
+    const read = () => relPath === 'scripts/resolvers/outside-voice-steps.ts'
       ? generateAdversarialStep({ host: 'claude', paths: HOST_PATHS.claude, skillName: 'review', tmplPath: 'review/SKILL.md.tmpl' })
       : fs.readFileSync(path.join(ROOT, relPath), 'utf8');
 

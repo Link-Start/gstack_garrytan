@@ -193,6 +193,44 @@ ${outsideVoiceCommand(ctx, opts)}
 Show the full response in a \`tool-output\` fence. Require successful execution and valid markers. Refusal, empty/malformed output, missing ${planRecommendation ? 'Recommendation: <action> because <reason>' : opts.purpose === 'design-direction' ? 'Recommendation' : 'score/severity/completion'} markers, timeout or CLI failure means \`outside_status: unavailable\`. ${opts.purpose === 'design-direction' ? 'Continue completed proposals; native completion does not count as outside coverage.' : opts.nativeAlreadyRequired ? 'Retain the required native pass without duplicating it; it cannot complete outside coverage.' : "Use the caller's fallback; missing coverage is never clean/PASS."} ${nativeStructured ? 'Scratch cleanup is automatic.' : 'After either outcome, delete only your private prompt; scratch cleanup is automatic.'}`;
 }
 
+/**
+ * outsideVoiceFailurePolicy owns the auth / timeout / empty-response / fallback
+ * bullets every outside-voice step renders after its invocation (moved from
+ * the copies in review.ts and design.ts). Add a call site by passing that
+ * site's semantics explicitly; no option has a default:
+ *   ${outsideVoiceFailurePolicy(ctx, { timeoutMinutes: 5, onTimeout: 'fallback',
+ *     stderrOnEmpty: false, fallback: 'native', escape: 0 })}
+ * Ratchet (d) in test/outside-voice-failure-policy.test.ts rejects hand-written
+ * copies of this prose in scripts/resolvers/*.ts and *.tmpl.
+ */
+export interface OutsideVoiceFailurePolicyOptions {
+  /** Provider limit named in the timeout message; match the invocation's timeoutMs. */
+  timeoutMinutes: number;
+  /** 'missing-coverage': a timed-out pass is reported as MISSING COVERAGE, never clean. */
+  onTimeout: 'fallback' | 'missing-coverage';
+  /** Ask for the relevant stderr when the provider returns nothing. */
+  stderrOnEmpty: boolean;
+  /** 'native': each failure falls back to the native subagent below; 'none': the site owns what follows. */
+  fallback: 'native' | 'none';
+  /** Template nesting level of the call site: 1 writes the login command's backticks as \`, 0 as plain backticks. */
+  escape: 0 | 1;
+}
+
+export function outsideVoiceFailurePolicy(ctx: TemplateContext, opts: OutsideVoiceFailurePolicyOptions): string {
+  const v = outsideVoiceFor(ctx);
+  const tick = opts.escape === 1 ? '\\`' : '`';
+  const login = v.id === 'codex' ? 'codex login' : 'claude auth login';
+  const fallback = opts.fallback === 'native' ? ` Fall back to the ${v.nativeLabel} subagent below.` : '';
+  const timeout = opts.onTimeout === 'missing-coverage'
+    ? `"${v.label} timed out after ${opts.timeoutMinutes} minutes and was terminated; this pass produced NO findings." A timed-out pass is MISSING COVERAGE, not a clean bill — say so explicitly rather than continuing as if ${v.label} had reviewed.`
+    : `"${v.label} timed out after ${opts.timeoutMinutes} minutes."`;
+  return [
+    `- **Auth failure:** If stderr contains "auth", "login", "unauthorized", or "API key": "${v.label} authentication failed. Run ${tick}${login}${tick} to authenticate."${fallback}`,
+    `- **Timeout:** ${timeout}${fallback}`,
+    `- **Empty response:** "${v.label} returned no response.${opts.stderrOnEmpty ? ' Stderr: <paste relevant error>.' : ''}"${fallback}`,
+  ].join('\n');
+}
+
 export function outsideVoiceProvenance(ctx: TemplateContext, phase: string): string {
   const v = outsideVoiceFor(ctx);
   return `Retain the historical review-log skill ID; add \`"host":"${ctx.host}","outside_provider":"${v.id}","outside_status":"completed|unavailable|disabled|skipped","phase":"${phase}"\`. Record differing attempt outcomes separately. \`source:"${v.id}"\` requires completed CLI output; native uses \`source:"in-host"\` (historical \`source:"claude"\`: native Claude). Availability/native fallback is not outside completion. Preserve all reported modelUsage; unknown model identity stays unknown.`;

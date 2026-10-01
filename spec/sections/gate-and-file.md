@@ -287,7 +287,7 @@ Resolve the archive path via the existing `gstack-paths` helper (handles
 `GSTACK_HOME`, `CLAUDE_PLUGIN_DATA`, Windows fallback):
 
 ```bash
-eval "$(~/.claude/skills/gstack/bin/gstack-paths)"
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
 eval "$(~/.claude/skills/gstack/bin/gstack-slug)"
 ARCHIVE_DIR="$GSTACK_STATE_ROOT/projects/$SLUG/specs"
 mkdir -p "$ARCHIVE_DIR"

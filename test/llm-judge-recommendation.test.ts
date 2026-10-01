@@ -122,7 +122,7 @@ Net: ...`);
     // adversarial subagent emit a synthesis Recommendation line, it follows
     // the same canonical shape and is graded by the same rubric. These
     // fixtures pin the v1.25.1.0+ cross-model-skill emit format documented
-    // in codex/SKILL.md.tmpl Steps 2A/2B/2C and scripts/resolvers/review.ts.
+    // in codex/SKILL.md.tmpl Steps 2A/2B/2C and scripts/resolvers/outside-voice-steps.ts.
     // Substance-5 cross-model fixtures explicitly compare against an
     // alternative (a different finding, a different recommended action, or
     // no-fix vs fix). The same rubric the AskUserQuestion judge uses applies:

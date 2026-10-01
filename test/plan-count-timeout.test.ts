@@ -131,7 +131,7 @@ test.skipIf(process.platform === 'win32')('deadline boundaries stop boot, late s
   const fake = path.join(dir, 'fake-claude');
   const worker = path.join(dir, 'worker.ts');
   const helper = pathToFileURL(path.join(ROOT, 'test/helpers/claude-pty-runner.ts')).href;
-  const screenModule = pathToFileURL(path.join(ROOT, 'test/helpers/pty-screen.ts')).href;
+  const screenModule = pathToFileURL(path.join(ROOT, 'test/helpers/pty/screen.ts')).href;
   fs.writeFileSync(fake, `#!${process.execPath}\n` + String.raw`
 import * as fs from 'node:fs';
 const log = (event, extra={}) => fs.appendFileSync(process.env.BOUNDARY_EVENTS,JSON.stringify({event,at:Date.now(),invocation:1,...extra})+'\n');

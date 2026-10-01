@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'node:os';
 import { spawnSync } from 'node:child_process';
-import { generatePlanCompletionAuditReview, generatePlanCompletionAuditShip, generatePlanCompletionGateShip, generatePlanVerificationExec } from '../scripts/resolvers/review';
+import { generatePlanCompletionAuditReview, generatePlanCompletionAuditShip, generatePlanCompletionGateShip, generatePlanVerificationExec } from '../scripts/resolvers/plan-gates';
 import { HOST_PATHS } from '../scripts/resolvers/types';
 
 const SHIP_DIR = path.join(__dirname, '..', 'ship');

@@ -262,7 +262,8 @@ At session start or after compaction, recover recent project context.
 ```bash
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
 _BRANCH=$(git branch --show-current 2>/dev/null | tr -cd 'a-zA-Z0-9._/-') || :; _BRANCH=${_BRANCH:-unknown}
-_PROJ="${GSTACK_HOME:-$HOME/.gstack}/projects/${SLUG:-unknown}"
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
+_PROJ="$GSTACK_STATE_ROOT/projects/${SLUG:-unknown}"
 if [ -d "$_PROJ" ]; then
   echo "--- RECENT ARTIFACTS ---"
   find "$_PROJ/ceo-plans" "$_PROJ/checkpoints" -type f -name "*.md" 2>/dev/null | xargs -r ls -t 2>/dev/null | head -3
@@ -372,7 +373,8 @@ Then build the complete version of what remains.
 
 **Eureka:** When first-principles reasoning contradicts conventional wisdom, name it and log:
 ```bash
-jq -n --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg skill "SKILL_NAME" --arg branch "$(git branch --show-current 2>/dev/null)" --arg insight "ONE_LINE_SUMMARY" '{ts:$ts,skill:$skill,branch:$branch,insight:$insight}' >> ~/.gstack/analytics/eureka.jsonl 2>/dev/null || true
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
+jq -n --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg skill "SKILL_NAME" --arg branch "$(git branch --show-current 2>/dev/null)" --arg insight "ONE_LINE_SUMMARY" '{ts:$ts,skill:$skill,branch:$branch,insight:$insight}' >> "$GSTACK_STATE_ROOT/analytics/eureka.jsonl" 2>/dev/null || true
 ```
 
 ## Completion Status Protocol
@@ -477,9 +479,10 @@ A `PRODUCT.md` (impeccable's product-context file) already answers the product q
 Look for office-hours output:
 
 ```bash
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
 setopt +o nomatch 2>/dev/null || true  # zsh compat
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
-ls ~/.gstack/projects/$SLUG/*office-hours* 2>/dev/null | head -5
+ls "$GSTACK_STATE_ROOT"/projects/$SLUG/*office-hours* 2>/dev/null | head -5
 ls .context/*office-hours* .context/attachments/*office-hours* 2>/dev/null | head -5
 ```
 
@@ -583,7 +586,7 @@ Commands:
 `generate` returns `sessionFile`; `iterate` requires that existing session. `variants` returns `paths` but creates no session: regenerate with an updated brief instead.
 
 **CRITICAL PATH RULE:** Design artifacts belong in `$GSTACK_STATE_ROOT/projects/$SLUG/designs/`.
-Use `bin/gstack-paths`: GSTACK_HOME → plugin storage → ~/.gstack. Keep it even if temporary; never substitute
+Use `bin/gstack-paths` (docs/state-root.md). Keep it even if temporary; never substitute
 .context/, docs/designs/ or another directory.
 These are user files, not application source.
 
@@ -663,7 +666,8 @@ Read this project's taste profile:
 ```bash
 eval "$("~/.claude/skills/gstack/bin/gstack-slug" 2>/dev/null)"
 [ -n "${SLUG:-}" ] || { echo "NO_TASTE_PROFILE"; exit 0; }
-_TASTE_PROFILE=~/.gstack/projects/$SLUG/taste-profile.json
+eval "$("~/.claude/skills/gstack/bin/gstack-paths")"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
+_TASTE_PROFILE="$GSTACK_STATE_ROOT/projects/$SLUG/taste-profile.json"
 if [ -f "$_TASTE_PROFILE" ]; then
   # Schema v1: { dimensions: { fonts, colors, layouts, aesthetics }, sessions: [] }
   # Each dimension has approved[] and rejected[] entries with

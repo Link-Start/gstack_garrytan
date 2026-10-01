@@ -1,7 +1,8 @@
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { ALL_HOST_CONFIGS } from '../hosts';
-import { generateAdversarialStep, generatePlanCompletionGateShip } from '../scripts/resolvers/review';
+import { generateAdversarialStep } from '../scripts/resolvers/outside-voice-steps';
+import { generatePlanCompletionGateShip } from '../scripts/resolvers/plan-gates';
 import { generateQAReview } from '../scripts/resolvers/qa';
 import { HOST_PATHS } from '../scripts/resolvers/types';
 import { readWorkflowExcerpt } from './helpers/workflow-excerpt';

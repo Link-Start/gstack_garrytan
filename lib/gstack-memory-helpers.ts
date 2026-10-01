@@ -24,7 +24,8 @@ import { appendJsonl } from "./jsonl-store";
 import { gbrainConfigDir, isExecTimeout } from "./gbrain-exec";
 import { dirname, join } from "path";
 import { execFileSync } from "child_process";
-import { homedir, tmpdir } from "os";
+import { tmpdir } from "os";
+import { resolveStateRoot } from "./state-root";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -326,7 +327,7 @@ function redactMatch(s: string): string {
 const ENGINE_CACHE_TTL_MS = 60 * 1000;
 
 function gstackHome(): string {
-  return process.env.GSTACK_HOME || join(homedir(), ".gstack");
+  return resolveStateRoot();
 }
 
 function engineCachePath(): string {

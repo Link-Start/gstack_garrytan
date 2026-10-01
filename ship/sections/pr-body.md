@@ -10,7 +10,7 @@ then return here for a new lookup, fresh body and both redaction scans before pu
 
 1. Resolve the archive directory and branch:
    ```bash
-   eval "$(~/.claude/skills/gstack/bin/gstack-paths)"
+   eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
    eval "$(~/.claude/skills/gstack/bin/gstack-slug)"
    CURRENT_BRANCH=$(git branch --show-current)
    SPEC_ARCHIVES="$GSTACK_STATE_ROOT/projects/$SLUG/specs"

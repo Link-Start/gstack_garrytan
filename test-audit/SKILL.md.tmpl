@@ -48,15 +48,16 @@ repo, 10 candidates).
 ## Step 1: Scope and seeds
 
 ```bash
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
 setopt +o nomatch 2>/dev/null || true  # zsh compat
 {{SLUG_SETUP}}
 DATETIME=$(date +%Y%m%d-%H%M%S)
-REPORT=~/.gstack/projects/$SLUG/test-audit-$DATETIME.md
+REPORT="$GSTACK_STATE_ROOT"/projects/$SLUG/test-audit-$DATETIME.md
 DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')
 echo "REPORT: $REPORT"
 echo "DEFAULT_BRANCH: ${DEFAULT_BRANCH:-unknown}"
 git ls-files | grep -cE '(^|/)(tests?|spec|__tests__)/|(^|/)test_[^/]+\.py$|_test\.(go|py|rb|ts|js|exs)$|\.(test|spec)\.[jt]sx?$|_spec\.rb$|Test\.(java|kt)$' | sed 's/^/TESTFILES:/'
-ls -t ~/.gstack/projects/$SLUG/*-"$BRANCH"-eng-review-test-plan-*.md 2>/dev/null | head -1 | sed 's/^/SEED_PLAN:/'
+ls -t "$GSTACK_STATE_ROOT"/projects/$SLUG/*-"$BRANCH"-eng-review-test-plan-*.md 2>/dev/null | head -1 | sed 's/^/SEED_PLAN:/'
 ```
 
 - Scope is the paths given, else the whole repository. With more than 300 test files

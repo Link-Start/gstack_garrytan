@@ -58,6 +58,11 @@ beforeEach(() => {
     join(import.meta.dir, '..', '..', 'bin', 'gstack-egress-lib.sh'),
     join(binDir, 'gstack-egress-lib.sh'),
   );
+  // Same for the state-root twin every migrated bin sources (docs/state-root.md).
+  symlinkSync(
+    join(import.meta.dir, '..', '..', 'bin', 'gstack-state-root.sh'),
+    join(binDir, 'gstack-state-root.sh'),
+  );
 });
 
 afterEach(() => {

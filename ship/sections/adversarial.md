@@ -140,7 +140,7 @@ Present the full output verbatim. An unavailable outside challenge does not bloc
 
 **Error handling:** Only this optional outside adversarial pass is non-blocking; native completion and structured-review decisions still apply.
 - **Auth failure:** If stderr contains "auth", "login", "unauthorized", or "API key": "Codex authentication failed. Run \`codex login\` to authenticate."
-- **Timeout:** "Codex exceeded 9 minutes and was terminated; this pass produced NO findings." A timed-out pass is MISSING COVERAGE, not a clean bill — say so explicitly rather than continuing as if Codex had reviewed.
+- **Timeout:** "Codex timed out after 9 minutes and was terminated; this pass produced NO findings." A timed-out pass is MISSING COVERAGE, not a clean bill — say so explicitly rather than continuing as if Codex had reviewed.
 - **Empty response:** "Codex returned no response. Stderr: <paste relevant error>."
 
 

@@ -226,7 +226,7 @@ First, set up the output directory. Name it after the screen/feature being desig
 
 ```bash
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
-eval "$(~/.claude/skills/gstack/bin/gstack-paths)"
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
 _DESIGN_DIR="$GSTACK_STATE_ROOT/projects/$SLUG/designs/<screen-name>-$(date +%Y%m%d)"
 mkdir -p "$_DESIGN_DIR"
 echo "DESIGN_DIR: $_DESIGN_DIR"
@@ -300,7 +300,7 @@ offer to generate a visual mockup showing what the improved version would look l
 
 ```bash
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
-eval "$(~/.claude/skills/gstack/bin/gstack-paths)"
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
 _DESIGN_DIR="$GSTACK_STATE_ROOT/projects/$SLUG/designs/ideal-$(date +%Y%m%d)"
 mkdir -p "$_DESIGN_DIR"
 _ROOT=$(git rev-parse --show-toplevel 2>/dev/null)

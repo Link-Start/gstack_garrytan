@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { ALL_HOST_CONFIGS } from '../hosts';
 import { generateQAExploratory, generateQAMethodReads, generateQAReview, generateQAReviewPreflight } from '../scripts/resolvers/qa';
-import { generatePlanVerificationExec } from '../scripts/resolvers/review';
+import { generatePlanVerificationExec } from '../scripts/resolvers/plan-gates';
 import { HOST_PATHS } from '../scripts/resolvers/types';
 
 function assertPreparation(text: string) {

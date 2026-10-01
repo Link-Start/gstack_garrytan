@@ -177,7 +177,7 @@ permissions or fixed paths override them. Do not create a forbidden second copy.
 Use this session's existing project slug and state directory for the project copy.
 If unknown or not writable within the supplied permissions, report that copy as
 blocked; still write the permitted local report. Do not run state-setup helpers.
-Write identical content to `~/.gstack/projects/{slug}/{user}-{branch}-test-outcome-{datetime}.md`.
+Write identical content to `$GSTACK_STATE_ROOT/projects/{slug}/{user}-{branch}-test-outcome-{datetime}.md` (the state root this session resolved).
 Get `{user}`/`{branch}` from `git config user.name`/`git branch --show-current`
 (fallbacks: `unknown-user`/`detached`); sanitize like `{target}`. Use UTC `YYYYMMDDTHHMMSSZ`.
 If that destination exists, choose a fresh suffixed filename; never replace a prior report.

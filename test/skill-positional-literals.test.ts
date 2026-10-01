@@ -93,8 +93,9 @@ for (const host of ['claude', 'codex'] as const) for (const args of [[], tenArgu
   test(`${label}: upgrade snooze advances the same-version level`, () => {
     mkdirSync(join(root, '.gstack'), { recursive: true });
     writeFileSync(join(root, '.gstack/update-snoozed'), '{new} 1 0\n');
-    const block = skill(host, 'gstack-upgrade').match(/```bash\n(_SNOOZE_FILE=[\s\S]*?)```/)![1];
-    expect(run(apply(block)).status).toBe(0);
+    const block = skill(host, 'gstack-upgrade').match(/```bash\n((?:eval [^\n]*gstack-paths[^\n]*\n)?_SNOOZE_FILE=[\s\S]*?)```/)![1];
+    // The block resolves the state root first; this fixture has no install, so it supplies the root directly.
+    expect(run(apply(block), { GSTACK_STATE_ROOT: join(root, '.gstack') }).status).toBe(0);
     expect(readFileSync(join(root, '.gstack/update-snoozed'), 'utf8')).toMatch(/^\{new\} 2 \d+\n$/);
   });
   test(`${label}: health error preserves its diagnostic argument`, () => {

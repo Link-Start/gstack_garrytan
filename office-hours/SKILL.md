@@ -273,7 +273,8 @@ At session start or after compaction, recover recent project context.
 ```bash
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
 _BRANCH=$(git branch --show-current 2>/dev/null | tr -cd 'a-zA-Z0-9._/-') || :; _BRANCH=${_BRANCH:-unknown}
-_PROJ="${GSTACK_HOME:-$HOME/.gstack}/projects/${SLUG:-unknown}"
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
+_PROJ="$GSTACK_STATE_ROOT/projects/${SLUG:-unknown}"
 if [ -d "$_PROJ" ]; then
   echo "--- RECENT ARTIFACTS ---"
   find "$_PROJ/ceo-plans" "$_PROJ/checkpoints" -type f -name "*.md" 2>/dev/null | xargs -r ls -t 2>/dev/null | head -3
@@ -383,7 +384,8 @@ Then build the complete version of what remains.
 
 **Eureka:** When first-principles reasoning contradicts conventional wisdom, name it and log:
 ```bash
-jq -n --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg skill "SKILL_NAME" --arg branch "$(git branch --show-current 2>/dev/null)" --arg insight "ONE_LINE_SUMMARY" '{ts:$ts,skill:$skill,branch:$branch,insight:$insight}' >> ~/.gstack/analytics/eureka.jsonl 2>/dev/null || true
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
+jq -n --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg skill "SKILL_NAME" --arg branch "$(git branch --show-current 2>/dev/null)" --arg insight "ONE_LINE_SUMMARY" '{ts:$ts,skill:$skill,branch:$branch,insight:$insight}' >> "$GSTACK_STATE_ROOT/analytics/eureka.jsonl" 2>/dev/null || true
 ```
 
 ## Completion Status Protocol
@@ -533,8 +535,9 @@ eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
 3. Use Grep/Glob to map the codebase areas most relevant to the user's request.
 4. **List existing design docs for this project:**
    ```bash
+   eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
    setopt +o nomatch 2>/dev/null || true  # zsh compat
-   ls -t ~/.gstack/projects/$SLUG/*-design-*.md 2>/dev/null
+   ls -t "$GSTACK_STATE_ROOT"/projects/$SLUG/*-design-*.md 2>/dev/null
    ```
    If design docs exist, list them: "Prior designs for this project: [titles + dates]"
 
@@ -643,8 +646,9 @@ After the user states the problem (first question in Phase 2A or 2B), search exi
 
 Extract 3-5 significant keywords from the user's problem statement and grep across design docs:
 ```bash
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-grep -li "<keyword1>\|<keyword2>\|<keyword3>" ~/.gstack/projects/$SLUG/*-design-*.md 2>/dev/null
+grep -li "<keyword1>\|<keyword2>\|<keyword3>" "$GSTACK_STATE_ROOT"/projects/$SLUG/*-design-*.md 2>/dev/null
 ```
 
 If matches found, read the matching design docs and surface them:
@@ -860,9 +864,9 @@ echo 'OUTSIDE_STATUS: completed provider=codex host=claude'
 Show the full response in a `tool-output` fence. Require successful execution and valid markers. Refusal, empty/malformed output, missing score/severity/completion markers, timeout or CLI failure means `outside_status: unavailable`. Use the caller's fallback; missing coverage is never clean/PASS. After either outcome, delete only your private prompt; scratch cleanup is automatic.
 
 **Error handling:** All errors are non-blocking — second opinion is a quality enhancement, not a prerequisite.
-- **Auth failure:** If stderr contains "auth", "login", "unauthorized", or "API key": "Codex authentication failed. Run \`codex login\` to authenticate." Fall back to Claude subagent.
-- **Timeout:** "Codex timed out after 5 minutes." Fall back to Claude subagent.
-- **Empty response:** "Codex returned no response." Fall back to Claude subagent.
+- **Auth failure:** If stderr contains "auth", "login", "unauthorized", or "API key": "Codex authentication failed. Run \`codex login\` to authenticate." Fall back to the Claude subagent below.
+- **Timeout:** "Codex timed out after 5 minutes." Fall back to the Claude subagent below.
+- **Empty response:** "Codex returned no response." Fall back to the Claude subagent below.
 
 On any Codex error, fall back to the Claude subagent below.
 
@@ -968,7 +972,7 @@ Generating visual mockups of the proposed design... (say "skip" if you don't nee
 
 ```bash
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
-eval "$(~/.claude/skills/gstack/bin/gstack-paths)"
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
 _DESIGN_DIR="$GSTACK_STATE_ROOT/projects/$SLUG/designs/mockup-$(date +%Y%m%d)"
 mkdir -p "$_DESIGN_DIR"
 echo "DESIGN_DIR: $_DESIGN_DIR"

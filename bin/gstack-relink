@@ -5,7 +5,7 @@
 #   gstack-relink
 #
 # Env overrides (for testing):
-#   GSTACK_STATE_DIR   — override ~/.gstack state directory
+#   GSTACK_HOME     — relocate the state root (chain: bin/gstack-state-root.sh)
 #   GSTACK_INSTALL_DIR — override gstack install directory
 #   GSTACK_SKILLS_DIR  — override target skills directory
 set -euo pipefail
@@ -40,7 +40,9 @@ PREFIX=$("$GSTACK_CONFIG" get skill_prefix 2>/dev/null || echo "false")
 # out-dir instead of the tracked install checkout. When a render exists for a
 # skill, relink serves it — otherwise a config change would silently flip
 # every skill back to the canonical (blockless) source.
-RENDER_DIR="${GSTACK_USER_RENDER_DIR:-${GSTACK_HOME:-$HOME/.gstack}/render/claude}"
+. "$SCRIPT_DIR/gstack-state-root.sh" 2>/dev/null || { echo "$0: cannot resolve the gstack state root: $SCRIPT_DIR/gstack-state-root.sh is missing. fix: reinstall with ./setup or /gstack-upgrade (docs/state-root.md)" >&2; exit 1; }
+gstack_state_root_select; GSTACK_STATE_ROOT="$_gstack_sr_root"
+RENDER_DIR="${GSTACK_USER_RENDER_DIR:-$GSTACK_STATE_ROOT/render/claude}"
 
 # ─── Ownership gate ───────────────────────────────────────────────────────────
 # relink runs on every ./setup and used to `rm -rf` any same-name entry with a
@@ -58,7 +60,7 @@ RENDER_DIR="${GSTACK_USER_RENDER_DIR:-${GSTACK_HOME:-$HOME/.gstack}/render/claud
 # refreshed in place. WEAK (byte-identity with our source, or gen-skill-docs'
 # two-line banner on a real file) proves only that the SKILL.md came from us:
 # it authorizes touching that one file, never deleting the directory, and a
-# differing file is moved to ${GSTACK_HOME:-~/.gstack}/backups/skills/<ts>/
+# differing file is moved to $GSTACK_STATE_ROOT/backups/skills/<ts>/
 # before we link over it (a user who started their own skill from a gstack
 # SKILL.md looks exactly like a pre-marker legacy copy).
 #
@@ -183,7 +185,7 @@ _report_foreign() {
 
 # Weakly-proven real files we would otherwise overwrite go here, one summary
 # line at the end. mv, not cp: the link that follows needs the path free.
-BACKUP_ROOT="${GSTACK_HOME:-$HOME/.gstack}/backups/skills/$(date +%Y%m%dT%H%M%S)"
+BACKUP_ROOT="$GSTACK_STATE_ROOT/backups/skills/$(date +%Y%m%dT%H%M%S)"
 BACKED_UP=()
 _backup_skill_md() {
   # Non-zero when the file could NOT be moved: the caller leaves the entry alone.

@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { ALL_HOST_CONFIGS } from '../hosts';
-import { generateAdversarialStep, generateCrossReviewDedup, generateSharedCodeReuse } from '../scripts/resolvers/review';
+import { generateAdversarialStep } from '../scripts/resolvers/outside-voice-steps';
+import { generateCrossReviewDedup, generateSharedCodeReuse } from '../scripts/resolvers/review-scope';
 import { HOST_PATHS } from '../scripts/resolvers/types';
 
 const compact = (text: string) => text.replace(/\s+/g, ' ');

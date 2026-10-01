@@ -240,7 +240,8 @@ At session start or after compaction, recover recent project context.
 ```bash
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
 _BRANCH=$(git branch --show-current 2>/dev/null | tr -cd 'a-zA-Z0-9._/-') || :; _BRANCH=${_BRANCH:-unknown}
-_PROJ="${GSTACK_HOME:-$HOME/.gstack}/projects/${SLUG:-unknown}"
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
+_PROJ="$GSTACK_STATE_ROOT/projects/${SLUG:-unknown}"
 if [ -d "$_PROJ" ]; then
   echo "--- RECENT ARTIFACTS ---"
   find "$_PROJ/ceo-plans" "$_PROJ/checkpoints" -type f -name "*.md" 2>/dev/null | xargs -r ls -t 2>/dev/null | head -3
@@ -350,7 +351,8 @@ Then build the complete version of what remains.
 
 **Eureka:** When first-principles reasoning contradicts conventional wisdom, name it and log:
 ```bash
-jq -n --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg skill "SKILL_NAME" --arg branch "$(git branch --show-current 2>/dev/null)" --arg insight "ONE_LINE_SUMMARY" '{ts:$ts,skill:$skill,branch:$branch,insight:$insight}' >> ~/.gstack/analytics/eureka.jsonl 2>/dev/null || true
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
+jq -n --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg skill "SKILL_NAME" --arg branch "$(git branch --show-current 2>/dev/null)" --arg insight "ONE_LINE_SUMMARY" '{ts:$ts,skill:$skill,branch:$branch,insight:$insight}' >> "$GSTACK_STATE_ROOT/analytics/eureka.jsonl" 2>/dev/null || true
 ```
 
 ## Completion Status Protocol
@@ -825,6 +827,7 @@ Never install, import cookies or bootstrap tests. Functional-only skips browser 
 **3. Run smoke and plan checks.**
 Follow the shared Probe loop for smoke checks and replays until the smoke limit.
 Then run required plan checks and revalidation, even after smoke expires, using the same procedure but no smoke guard; never reset the clock.
+Plan checks and their revalidation publish a checkpoint beside D before each probe but skip the `G status D` expiry stop and use `--timeout-ms`, not `--deadline D`. A smoke recheck after expiry is not-run.
 Use finite command timeouts, capped at the caller's remaining time if it has a deadline. /review sets none; only an invoker-supplied EARLIER_UTC counts.
 Await clock/guard results before acting. When the caller's deadline expires, mark unfinished checks not-run.
 
@@ -951,8 +954,8 @@ toward AUTO-FIX.
 
 **Test stub override:** Any finding that has a `test_stub` field, from a specialist or exploratory QA,
 is reclassified as ASK regardless of its original classification. When presenting the ASK
-item, show the proposed test file path and the test code. The user approves or skips the
-test creation. If approved, follow Step 5d's regression-before-repair order. Derive the test file path from
+item, show the proposed test file path and the test code. Step 5c's A) Fix writes the test and
+repair in Step 5d's regression-before-repair order; B) Skip skips both; the defect stays unresolved. Derive the test file path from
 the finding's `path` using project conventions (`spec/` for RSpec, `__tests__/` for
 Jest/Vitest, `test_` prefix for pytest, `_test.go` suffix for Go). If the test file
 already exists, append the new test.

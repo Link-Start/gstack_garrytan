@@ -33,7 +33,8 @@ export function generateSlugEval(ctx: TemplateContext): string {
 }
 
 export function generateSlugSetup(ctx: TemplateContext): string {
-  return `eval "$(${ctx.paths.binDir}/gstack-slug 2>/dev/null)" && mkdir -p ~/.gstack/projects/$SLUG`;
+  return `eval "$(${ctx.paths.binDir}/gstack-paths)"; : "\${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
+eval "$(${ctx.paths.binDir}/gstack-slug 2>/dev/null)" && mkdir -p "$GSTACK_STATE_ROOT/projects/$SLUG" && echo "PROJECT_DIR: $GSTACK_STATE_ROOT/projects/$SLUG"`;
 }
 
 export function generateBaseBranchDetect(_ctx: TemplateContext): string {

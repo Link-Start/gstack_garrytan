@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { outsideVoiceCommand, outsideVoicePreflight, outsideVoiceInvocation } from '../scripts/resolvers/outside-voice';
-import { generateAdversarialStep, generateCodexDocReview, generateCodexPlanReview } from '../scripts/resolvers/review';
+import { generateAdversarialStep, generateCodexDocReview, generateCodexPlanReview } from '../scripts/resolvers/outside-voice-steps';
 import { validateOutsideReview } from '../lib/outside-review-result';
 import { HOST_PATHS, type TemplateContext } from '../scripts/resolvers/types';
 import { ALL_HOST_CONFIGS } from '../hosts';

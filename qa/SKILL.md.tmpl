@@ -113,9 +113,10 @@ Prefer the richer of recent project test plans and plans in conversation over gi
 
 1. **Project-scoped test plans:** Find the latest for this repo:
    ```bash
+   eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
    setopt +o nomatch 2>/dev/null || true  # zsh compat
    {{SLUG_EVAL}}
-   ls -t ~/.gstack/projects/$SLUG/*-test-plan-*.md 2>/dev/null | head -1
+   ls -t "$GSTACK_STATE_ROOT"/projects/$SLUG/*-test-plan-*.md 2>/dev/null | head -1
    ```
 2. **Conversation context:** Prior `/plan-eng-review` or `/plan-ceo-review` test plans.
 3. Fall back to git diff only if neither exists.
@@ -272,7 +273,7 @@ Write the Output Structure report locally and copy the same content to project c
 ```bash
 {{SLUG_SETUP}}
 ```
-Write to `~/.gstack/projects/{slug}/{user}-{branch}-test-outcome-{datetime}.md`
+Write to `<PROJECT_DIR>/{user}-{branch}-test-outcome-{datetime}.md` (`PROJECT_DIR` printed above)
 
 **Per-issue additions:**
 - Fix Status: verified / best-effort / reverted / deferred

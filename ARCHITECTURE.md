@@ -67,7 +67,7 @@ Node.js would work. Bun is better here for three reasons:
 
 3. **Native TypeScript.** The server runs as `bun run server.ts` during development. No compilation step, no `ts-node`, no source maps to debug. The compiled binary is for deployment; source files are for development.
 
-4. **Built-in HTTP server.** `Bun.serve()` is fast, simple, and doesn't need Express or Fastify. The server handles ~10 routes total. A framework would be overhead.
+4. **Built-in HTTP server.** `Bun.serve()` is fast, simple, and doesn't need Express or Fastify. The server handles ~30 routes, declared in one route table (`browse/src/routes/table.ts`; its header shows how to add one). A framework would be overhead.
 
 The bottleneck is always Chromium, not the CLI or server. Bun's startup speed (~1ms for the compiled binary vs ~100ms for Node) is nice but not the reason we chose it. The compiled binary and native SQLite are.
 
@@ -215,14 +215,14 @@ Page content harvested by CDP can contain lone UTF-16 surrogate halves (orphaned
 
 | Egress path | Module | Sanitization point |
 |---|---|---|
-| `POST /command` (HTTP) | `browse/src/server.ts` | `handleCommandInternal` wrapper (sanitizes the result of `handleCommandInternalImpl`) |
-| `POST /command/batch` | `browse/src/server.ts` | Same wrapper — batch consumers inherit it |
-| `GET /activity/stream` (SSE) | `browse/src/server.ts` | `sanitizeReplacer` passed to `JSON.stringify` |
-| `GET /inspector/events` (SSE) | `browse/src/server.ts` | `sanitizeReplacer` passed to `JSON.stringify` |
+| `POST /command` (HTTP) | `browse/src/routes/commands.ts` (wrapper in `browse/src/server.ts`) | `handleCommandInternal` wrapper (sanitizes the result of `handleCommandInternalImpl`) |
+| `POST /batch` | `browse/src/routes/commands.ts` | Same wrapper — batch consumers inherit it |
+| `GET /activity/stream` (SSE) | `browse/src/routes/activity.ts` | `sanitizeReplacer` applied inside `createSseEndpoint` |
+| `GET /inspector/events` (SSE) | `browse/src/routes/inspector.ts` | `sanitizeReplacer` applied inside `createSseEndpoint` |
 
 `sanitizeReplacer` is a `JSON.stringify` replacer function that cleans every string value during encoding. Post-stringify regex doesn't work here — `JSON.stringify` has already converted `\uD800` into the literal escape sequence `"\\ud800"` before the regex could match, so the replacer must run inside the encoding pipeline. The pure-string helper `sanitizeLoneSurrogates` is used directly for `text/plain` responses.
 
-**Architectural invariant.** Every new SSE/WebSocket writer or HTTP response that ships page-content-derived strings MUST go through one of two paths: `JSON.stringify(payload, sanitizeReplacer)` for object payloads, or `sanitizeLoneSurrogates(body)` for text bodies. New surfaces that bypass both will desync the system. Inline comments at both SSE producers in `server.ts` say so; `browse/test/server-sanitize-surrogates.test.ts` pins wiring with bug-repro + invariant tests (`handleCommandInternalImpl` rename, central sanitization line, replacer existence, SSE producers stringify with replacer).
+**Architectural invariant.** Every new SSE/WebSocket writer or HTTP response that ships page-content-derived strings MUST go through one of two paths: `JSON.stringify(payload, sanitizeReplacer)` for object payloads, or `sanitizeLoneSurrogates(body)` for text bodies. New surfaces that bypass both will desync the system. Inline comments at both SSE producers (`routes/activity.ts`, `routes/inspector.ts`) say so; `browse/test/server-sanitize-surrogates.test.ts` pins wiring with bug-repro + invariant tests (`handleCommandInternalImpl` rename, central sanitization line, replacer existence, SSE producers stringify with replacer).
 
 ### Prompt injection defense (sidebar agent)
 
@@ -350,7 +350,7 @@ Templates contain the workflows, tips, and examples that require human judgment.
 | `{{TEST_VALUE_BAR:<mode>}}` | `resolvers/test-value.ts` | Shared test value bar (authoring gate, value card, X/Y coverage, red-first proof, low-value catalog) for /qa and /qa-only (`qa`) and /test-audit (`audit`); /plan-eng-review and /ship embed it through the coverage audit |
 | `{{TEST_VALUE_MESSAGE:<key>}}` | `resolvers/test-value.ts` | One degraded-mode message (problem, consequence, fix, docs anchor) from the shared constants |
 | `{{TEST_BOOTSTRAP}}` | `resolvers/testing.ts` | Test framework detection, bootstrap, CI/CD setup for /ship and /design-review |
-| `{{CODEX_PLAN_REVIEW}}` | `resolvers/review.ts` | Optional outside plan review for /plan-ceo-review and /plan-eng-review: Claude Code on Codex, Codex on other supported harnesses, with the caller's native subagent fallback |
+| `{{CODEX_PLAN_REVIEW}}` | `resolvers/outside-voice-steps.ts` | Optional outside plan review for /plan-ceo-review and /plan-eng-review: Claude Code on Codex, Codex on other supported harnesses, with the caller's native subagent fallback |
 | `{{DESIGN_SETUP}}` | `resolvers/design.ts` | Discovery pattern for `$D` design binary, mirrors `{{BROWSE_SETUP}}` |
 | `{{DESIGN_DETECTOR}}` | `resolvers/design.ts` | Probe block + sentinel reading for the user-installed impeccable engine (`bin/gstack-design-detect.ts`); `:phase0` renders design-review's mechanical scan, `:gate` design-html's bounded slop gate |
 | `{{DESIGN_MD_CHECK}}` | `resolvers/design.ts` | Open DESIGN.md format check through `bin/gstack-design-md.ts`, with the one-time conversion offer persisted in the file; `:calibrate` renders the tokens-as-calibration form for /design-review |

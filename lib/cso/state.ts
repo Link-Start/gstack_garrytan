@@ -12,6 +12,7 @@ import {
   sha256,
 } from './contracts';
 import { redact, sanitizeForJson, sanitizeHelperForJson } from './process';
+import { resolveStateRoot } from '../state-root';
 const MAX_STATE_FILE = 1024 * 1024;
 
 type ExactStats = Pick<
@@ -681,13 +682,8 @@ export function discardAtomicNoReplaceTemp(
 }
 
 export function stateRoot(env: Record<string, string | undefined> = process.env): string {
-  // Mirrors bin/gstack-paths. Security artifacts are intentionally outside every sync allowlist.
-  const userHome = env.HOME || (process.platform === 'win32' ? env.USERPROFILE : '');
-  return resolve(
-    env.GSTACK_HOME ||
-      (env.CLAUDE_PLUGIN_ROOT?.toLowerCase().includes('gstack') ? env.CLAUDE_PLUGIN_DATA : '') ||
-      join(userHome || '.', '.gstack'),
-  );
+  // The shared chain (lib/state-root.ts), made absolute. Security artifacts are intentionally outside every sync allowlist.
+  return resolve(resolveStateRoot(env));
 }
 function ensureDirectory(path: string, hardenExistingLeaf: boolean): string {
   const p = resolve(path),

@@ -167,6 +167,9 @@ fi
 
 INSTALL_GSTACK_DIR="$(cd "$(dirname "$0")" && pwd)"
 SOURCE_GSTACK_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+# One state root for everything setup writes (bin/gstack-state-root.sh, docs/state-root.md).
+. "$SOURCE_GSTACK_DIR/bin/gstack-state-root.sh" 2>/dev/null || { echo "$0: cannot resolve the gstack state root: $SOURCE_GSTACK_DIR/bin/gstack-state-root.sh is missing. fix: reinstall with ./setup or /gstack-upgrade (docs/state-root.md)" >&2; exit 1; }
+gstack_state_root_select; GSTACK_STATE_ROOT="$_gstack_sr_root"
 INSTALL_SKILLS_DIR="$(dirname "$INSTALL_GSTACK_DIR")"
 BROWSE_BIN="$SOURCE_GSTACK_DIR/browse/dist/browse"
 CODEX_SKILLS="${CODEX_HOME:-$HOME/.codex}/skills"
@@ -308,7 +311,7 @@ _link_or_copy() {
 # marker) means we created the entry and may delete or refresh it whole; WEAK
 # (byte-identity with our source, or the two-line generated banner on a real
 # file) covers only that SKILL.md — never the directory — and a differing
-# weakly-proven file is moved to ${GSTACK_HOME:-~/.gstack}/backups/skills/<ts>/
+# weakly-proven file is moved to $GSTACK_STATE_ROOT/backups/skills/<ts>/
 # before we install over it. An entry is OURS
 # when: it is a symlink resolving into the gstack payload / render dir (or any
 # path with a `gstack` segment, the convention cleanup and gstack-uninstall
@@ -332,7 +335,7 @@ _gstack_target_is_ours() {
   # $1 = absolute target path, $2 = gstack payload dir
   local t="$1" g="$2" g_real render render_real
   g_real="$(cd "$g" 2>/dev/null && pwd -P || printf '%s' "$g")"
-  render="${GSTACK_USER_RENDER_DIR:-${GSTACK_HOME:-$HOME/.gstack}/render/claude}"
+  render="${GSTACK_USER_RENDER_DIR:-$GSTACK_STATE_ROOT/render/claude}"
   render_real="$(cd "$render" 2>/dev/null && pwd -P || printf '%s' "$render")"
   case "$t" in
     "$g"/*|"$g_real"/*|"$render"/*|"$render_real"/*|gstack/*|*/gstack/*|*/.gstack/render/claude/*) return 0 ;;
@@ -363,7 +366,7 @@ _claude_entry_is_ours() {
     # A gbrain install serves the RENDERED file (link_claude_skill_dirs prefers
     # it), so an exact copy of that render is ours too.
     if [ -n "$src_md" ]; then
-      render_md="${GSTACK_USER_RENDER_DIR:-${GSTACK_HOME:-$HOME/.gstack}/render/claude}/$(basename "$(dirname "$src_md")")/SKILL.md"
+      render_md="${GSTACK_USER_RENDER_DIR:-$GSTACK_STATE_ROOT/render/claude}/$(basename "$(dirname "$src_md")")/SKILL.md"
       [ -f "$render_md" ] && cmp -s "$entry/SKILL.md" "$render_md" && return 0
     fi
     _gstack_generated_header "$entry/SKILL.md" && return 0
@@ -389,7 +392,7 @@ _claude_entry_owned_strongly() {
 }
 # Weakly-proven real files we would otherwise overwrite are moved here (mv, so
 # the path is free for the link); the final summary prints one line.
-_SKILL_BACKUP_ROOT="${GSTACK_HOME:-$HOME/.gstack}/backups/skills/$(date +%Y%m%dT%H%M%S)"
+_SKILL_BACKUP_ROOT="$GSTACK_STATE_ROOT/backups/skills/$(date +%Y%m%dT%H%M%S)"
 _BACKED_UP_SKILL_MDS=()
 _backup_skill_md() {
   # Returns non-zero when the file could NOT be moved: the caller must then
@@ -1620,7 +1623,7 @@ link_claude_skill_dirs() {
       # file's section-base paths point into the render dir, so section reads
       # resolve there too.
       _skill_md_src="$gstack_dir/$dir_name/SKILL.md"
-      _render_dir="${GSTACK_USER_RENDER_DIR:-${GSTACK_HOME:-$HOME/.gstack}/render/claude}"
+      _render_dir="${GSTACK_USER_RENDER_DIR:-$GSTACK_STATE_ROOT/render/claude}"
       if [ -f "$_render_dir/$dir_name/SKILL.md" ]; then
         _skill_md_src="$_render_dir/$dir_name/SKILL.md"
       fi
@@ -2868,7 +2871,7 @@ fi
 # Users who install gbrain after running ./setup should re-run setup OR
 # call `gstack-config gbrain-refresh`.
 DETECT_BIN="$SOURCE_GSTACK_DIR/bin/gstack-gbrain-detect"
-GBRAIN_STATE_DIR="${GSTACK_HOME:-$HOME/.gstack}"
+GBRAIN_STATE_DIR="$GSTACK_STATE_ROOT"
 DETECTION_FILE="$GBRAIN_STATE_DIR/gbrain-detection.json"
 _GSTACK_RENDER_DIR="${GSTACK_USER_RENDER_DIR:-$GBRAIN_STATE_DIR/render/claude}"
 # PID-unique tmp so concurrent setups (parallel Conductor workspaces) can't
@@ -3290,8 +3293,10 @@ fi
 # posture). An explicit answer is persisted and never re-asked; an explicit
 # "false" is a recorded decline (adversarial review finding 11).
 # `gstack-config get` defaults absent keys to "false", which is
-# indistinguishable from a decline — test key presence in the config file.
-_GSTACK_CFG_FILE="${GSTACK_HOME:-$HOME/.gstack}/config.yaml"
+# indistinguishable from a decline — test key presence in the config file
+# of the resolved state root (the twin beside gstack-config).
+. "$(dirname "$GSTACK_CONFIG")/gstack-state-root.sh" 2>/dev/null && gstack_state_root_select
+_GSTACK_CFG_FILE="${_gstack_sr_root:-$GSTACK_STATE_ROOT}/config.yaml"
 if ! grep -q '^redact_prepush_hook:' "$_GSTACK_CFG_FILE" 2>/dev/null; then
   if [ "$QUIET" -ne 1 ] && [ -t 0 ] && [ -t 1 ]; then
     _REDACT_PROMPT_TIMEOUT=10

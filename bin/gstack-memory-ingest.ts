@@ -72,6 +72,7 @@ import { execGbrainText, spawnGbrainAsync } from "../lib/gbrain-exec";
 import { writeReceipt } from "../lib/egress-receipt";
 import { checkOwnedStagingDir, STAGING_MARKER } from "../lib/staging-guard";
 import { hasRepoPolicyStore, repoPolicyTierBatch } from "../lib/gbrain-repo-policy-client";
+import { resolveStateRoot } from "../lib/state-root";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -186,7 +187,7 @@ interface BulkResult {
 // ── Constants ──────────────────────────────────────────────────────────────
 
 const HOME = homedir();
-const GSTACK_HOME = process.env.GSTACK_HOME || join(HOME, ".gstack");
+const GSTACK_HOME = resolveStateRoot();
 const STATE_PATH = join(GSTACK_HOME, ".transcript-ingest-state.json");
 const DEFAULT_INCREMENTAL_BUDGET_MS = 50;
 

@@ -42,11 +42,12 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import { runBin, repoRoot } from './spawn-bin';
 import { isConductor } from '../../../lib/is-conductor';
 import { classifyQuestion } from '../../../scripts/one-way-doors';
 import { SPAWNED_ESCAPE_SENTENCE, CONDUCTOR_SPAWNED_DENY_REASON, spawnedByEnv } from './spawned-directive';
+import { resolveStateRoot } from '../../../lib/state-root';
+import { logHookError as sharedLogHookError } from './hook-log';
 
 interface HookStdin {
   session_id?: string;
@@ -66,25 +67,10 @@ interface HookStdin {
 const MARKER_RE = /<gstack-qid:([a-z0-9-]{1,64})>/i;
 const RECOMMENDED_LABEL_RE = /\(recommended\)\s*$/i;
 
-function stateRoot(): string {
-  return (
-    process.env.GSTACK_STATE_ROOT ||
-    process.env.GSTACK_HOME ||
-    path.join(os.homedir(), '.gstack')
-  );
-}
+const stateRoot = (): string => resolveStateRoot();
 
 function logHookError(msg: string): void {
-  try {
-    const sr = stateRoot();
-    fs.mkdirSync(sr, { recursive: true });
-    fs.appendFileSync(
-      path.join(sr, 'hook-errors.log'),
-      `${new Date().toISOString()} question-preference-hook: ${msg}\n`,
-    );
-  } catch {
-    // last-resort swallow
-  }
+  sharedLogHookError('question-preference-hook', msg);
 }
 
 function readStdin(): Promise<string> {

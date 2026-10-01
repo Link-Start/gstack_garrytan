@@ -141,7 +141,7 @@ Show summary statistics about the project's learnings.
 
 ```bash
 eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)"
-eval "$(~/.claude/skills/gstack/bin/gstack-paths)"
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
 LEARN_FILE="$GSTACK_STATE_ROOT/projects/$SLUG/learnings.jsonl"
 if [ -f "$LEARN_FILE" ]; then
   TOTAL=$(wc -l < "$LEARN_FILE" | tr -d ' ')

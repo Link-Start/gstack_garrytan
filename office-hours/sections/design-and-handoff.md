@@ -5,19 +5,21 @@
 Write the design document to the project directory.
 
 ```bash
-eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" && mkdir -p ~/.gstack/projects/$SLUG
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
+eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null)" && mkdir -p "$GSTACK_STATE_ROOT/projects/$SLUG" && echo "PROJECT_DIR: $GSTACK_STATE_ROOT/projects/$SLUG"
 USER=$(whoami)
 DATETIME=$(date +%Y%m%d-%H%M%S)
 ```
 
 **Design lineage:** Before writing, check for existing design docs on this branch:
 ```bash
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
 setopt +o nomatch 2>/dev/null || true  # zsh compat
-PRIOR=$(ls -t ~/.gstack/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
+PRIOR=$(ls -t "$GSTACK_STATE_ROOT"/projects/$SLUG/*-$BRANCH-design-*.md 2>/dev/null | head -1)
 ```
 If `$PRIOR` exists, the new doc gets a `Supersedes:` field referencing it. This creates a revision chain — you can trace how a design evolved across office hours sessions.
 
-Write to `~/.gstack/projects/{slug}/{user}-{branch}-design-{datetime}.md`.
+Write to `<PROJECT_DIR>/{user}-{branch}-design-{datetime}.md` (`PROJECT_DIR` printed by the setup block above).
 
 **Repo copy (dual-write, #703 + #2000).** When the session runs inside a git
 repository, ALSO write the doc to `docs/designs/{topic-slug}.md` in the repo —
@@ -254,8 +256,9 @@ inventing duplicate counts. Preserve the Assignment, coaching, approval, and Han
 Append the helper's actual metrics to the existing analytics log (telemetry is
 best-effort and must not block approval):
 ```bash
-mkdir -p ~/.gstack/analytics
-echo '{"skill":"office-hours","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","iterations":ITERATIONS,"issues_found":FOUND,"issues_fixed":FIXED,"remaining":REMAINING,"quality_score":SCORE}' >> ~/.gstack/analytics/spec-review.jsonl 2>/dev/null || true
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
+mkdir -p "$GSTACK_STATE_ROOT/analytics"
+echo '{"skill":"office-hours","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","iterations":ITERATIONS,"issues_found":FOUND,"issues_fixed":FIXED,"remaining":REMAINING,"quality_score":SCORE}' >> "$GSTACK_STATE_ROOT/analytics/spec-review.jsonl" 2>/dev/null || true
 ```
 Use iterations, issues_found, issues_fixed, remaining, and quality_score from the
 helper. FOUND counts finding observations across rounds; FIXED counts only
@@ -450,7 +453,7 @@ This must feel earned, not broadcast. If the evidence doesn't support it, skip e
 with a narrative arc (not a data table). The arc tells the STORY of their journey in
 second person, referencing specific things they said across sessions. Then open it:
 ```bash
-eval "$(~/.claude/skills/gstack/bin/gstack-paths)"
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
 open "$GSTACK_STATE_ROOT/builder-journey.md"
 ```
 
@@ -582,8 +585,9 @@ eval "$(~/.claude/skills/gstack/bin/gstack-slug 2>/dev/null || true)"
 
 2. Log the selection to analytics:
 ```bash
-mkdir -p ~/.gstack/analytics
-echo '{"skill":"office-hours","event":"resources_shown","count":NUM_RESOURCES,"categories":"CAT1,CAT2","ts":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}' >> ~/.gstack/analytics/skill-usage.jsonl 2>/dev/null || true
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"
+mkdir -p "$GSTACK_STATE_ROOT"/analytics
+echo '{"skill":"office-hours","event":"resources_shown","count":NUM_RESOURCES,"categories":"CAT1,CAT2","ts":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}' >> "$GSTACK_STATE_ROOT"/analytics/skill-usage.jsonl 2>/dev/null || true
 ```
 
 3. Use AskUserQuestion to offer opening the resources:

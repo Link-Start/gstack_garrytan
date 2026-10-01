@@ -1241,7 +1241,8 @@ describe('PLAN_FILE_REVIEW_REPORT resolver', () => {
 
   test('Eng renderers use real code delimiters without changing confidence rules or report fields', async () => {
     const {generateConfidenceCalibration} = await import('../scripts/resolvers/confidence');
-    const {generateReviewDashboard, generatePlanFileReviewReport, generateCodexPlanReview} = await import('../scripts/resolvers/review');
+    const {generateReviewDashboard, generatePlanFileReviewReport} = await import('../scripts/resolvers/review-dashboard');
+    const {generateCodexPlanReview} = await import('../scripts/resolvers/outside-voice-steps');
     const {HOST_PATHS} = await import('../scripts/resolvers/types');
     for (const host of ALL_HOST_CONFIGS) {
       const ctx = {skillName: 'plan-eng-review', tmplPath: 'plan-eng-review/SKILL.md.tmpl',
@@ -1532,7 +1533,7 @@ describe('Skill invocation during plan mode in preamble', () => {
 
 describe('SPEC_REVIEW_LOOP resolver', () => {
   const content = readSkillUnion('office-hours'); // carved: Phase 5/6 prose moved to section
-  const { generateSpecReviewLoop } = require('../scripts/resolvers/review');
+  const { generateSpecReviewLoop } = require('../scripts/resolvers/spec-review');
   const { HOST_PATHS } = require('../scripts/resolvers/types');
   const render = (skillName: string, host = 'claude') => generateSpecReviewLoop({
     skillName,
@@ -1658,8 +1659,9 @@ describe('SPEC_REVIEW_LOOP resolver', () => {
     expect(report).toContain('failed mkdir or append stops the review');
     expect(report.replace(/\s+/g, ' ')).toContain('Recording the **0H spec-review metrics** is required when writing is permitted, even if the reviewer failed');
     expect(report.replace(/\s+/g, ' ')).toContain('If the reviewer fails, report that limit and continue after recording the outcome; if a required save fails, stop before claiming completion');
-    expect(report).toContain('mkdir -p ~/.gstack/analytics || exit 1');
-    expect(report).toContain('>> ~/.gstack/analytics/spec-review.jsonl || exit 1');
+    expect(report).toContain('eval "$(~/.claude/skills/gstack/bin/gstack-paths)"; : "${GSTACK_STATE_ROOT:?gstack-paths failed; reinstall with ./setup or /gstack-upgrade}"');
+    expect(report).toContain('mkdir -p "$GSTACK_STATE_ROOT/analytics" || exit 1');
+    expect(report).toContain('>> "$GSTACK_STATE_ROOT/analytics/spec-review.jsonl" || exit 1');
     expect(report).not.toContain('Your doc survived');
   });
 
@@ -1865,7 +1867,7 @@ describe('Codex filesystem boundary', () => {
     expect(content).toContain('Consider retrying');
   });
 
-  test('review.ts CODEX_BOUNDARY constant is interpolated into resolver output', () => {
+  test('outside-voice-steps.ts CODEX_BOUNDARY constant is interpolated into resolver output', () => {
     // The adversarial step resolver should include boundary text in codex exec
     // prompts. Carved: the adversarial step lives in sections/adversarial.md.
     const reviewContent = readSkillUnion('review');
@@ -1935,6 +1937,7 @@ describe('BENEFITS_FROM resolver', () => {
       fs.mkdirSync(cwd);
       fs.copyFileSync(path.join(ROOT, 'bin/gstack-slug'), helper);
       fs.chmodSync(helper, 0o755);
+      fs.copyFileSync(path.join(ROOT, 'bin/gstack-state-root.sh'), path.join(path.dirname(helper), 'gstack-state-root.sh'));
       const expected = path.join(home, '.gstack/projects/canonical-override/session-unknown-design-current.md');
       const wrong = path.join(home, '.gstack/projects/project/session-unknown-design-wrong.md');
       for (const file of [expected, wrong]) {
@@ -4056,7 +4059,11 @@ describe('codex commands must not use inline $(git rev-parse --show-toplevel) fo
     // the git command it's told to — the adversarial pass legitimately scopes
     // itself in prompt text.
     const checkedFiles = [
-      'scripts/resolvers/review.ts',
+      'scripts/resolvers/review-dashboard.ts',
+      'scripts/resolvers/plan-gates.ts',
+      'scripts/resolvers/spec-review.ts',
+      'scripts/resolvers/outside-voice-steps.ts',
+      'scripts/resolvers/review-scope.ts',
       'review/SKILL.md',
       'ship/SKILL.md',
       'codex/SKILL.md.tmpl',
@@ -4529,8 +4536,21 @@ describe('plan-mode-info resolver (handshake-replacement)', () => {
   });
 });
 
+// Every skill that renders {{PLAN_FILE_REVIEW_REPORT}} / {{EXIT_PLAN_MODE_GATE}},
+// on every host: the union covers each skill-specific branch of both resolvers.
+function renderPlanReportAndGate(): string {
+  const { generatePlanFileReviewReport } = require('../scripts/resolvers/review-dashboard');
+  const { generateExitPlanModeGate } = require('../scripts/resolvers/plan-gates');
+  const { HOST_PATHS } = require('../scripts/resolvers/types');
+  const skills = ['codex', 'devex-review', 'plan-ceo-review', 'plan-design-review', 'plan-devex-review', 'plan-eng-review'];
+  return ALL_HOST_CONFIGS.flatMap((host) => skills.map((skillName) => {
+    const ctx = { skillName, tmplPath: `${skillName}/SKILL.md.tmpl`, host: host.name, paths: HOST_PATHS[host.name] };
+    return `${generatePlanFileReviewReport(ctx)}\n${generateExitPlanModeGate(ctx)}`;
+  })).join('\n');
+}
+
 // GSTACK REVIEW REPORT report-at-bottom contract — verifies the prompt-text
-// fix in scripts/resolvers/review.ts (the load-bearing change for the
+// fix in scripts/resolvers/review-dashboard.ts (the load-bearing change for the
 // "report not at bottom of plan in plan mode" bug). The bug is in the
 // prompt's contradictory write-flow instructions, not in observable
 // runtime behavior we can cheaply gate in CI. Verifying the prompt text
@@ -4565,8 +4585,8 @@ describe('GSTACK REVIEW REPORT delete-then-append flow', () => {
     });
   }
 
-  test('scripts/resolvers/review.ts source has the rewritten flow', () => {
-    const src = fs.readFileSync(path.join(ROOT, 'scripts', 'resolvers', 'review.ts'), 'utf-8');
+  test('plan-file review report resolver renders the rewritten flow', () => {
+    const src = renderPlanReportAndGate();
     expect(src).toContain('delete-then-append flow');
     expect(src).toContain('never mid-file');
     expect(src).toContain('Do NOT replace the section in place');
@@ -4805,8 +4825,8 @@ describe('GSTACK REVIEW REPORT mandatory unresolved-decisions status', () => {
     });
   }
 
-  test('scripts/resolvers/review.ts source carries the mandatory block + blocking gate', () => {
-    const src = fs.readFileSync(path.join(ROOT, 'scripts', 'resolvers', 'review.ts'), 'utf-8');
+  test('plan-file review report and exit gate resolvers render the mandatory block + blocking gate', () => {
+    const src = renderPlanReportAndGate();
     // Report resolver: mandatory, never-omitted, exact sentinel, anti-double-count algorithm.
     expect(src).toContain('Unresolved-decisions status (MANDATORY');
     expect(src).toContain('NO UNRESOLVED DECISIONS');

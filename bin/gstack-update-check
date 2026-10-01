@@ -10,7 +10,7 @@
 #   GSTACK_DIR          — override auto-detected gstack root
 #   GSTACK_REMOTE_URL   — override remote VERSION URL (branch-pinned fallback)
 #   GSTACK_REMOTE_REPO  — override remote git URL for ls-remote SHA resolution
-#   GSTACK_STATE_DIR    — override ~/.gstack state directory
+#   GSTACK_HOME     — relocate the state root (chain: bin/gstack-state-root.sh)
 set -euo pipefail
 
 # A crash must not read as "up to date" (#1974). With set -e, any unguarded
@@ -22,7 +22,9 @@ set -E
 trap 'rc=$?; echo "CHECK_FAILED gstack-update-check crashed (line $LINENO, rc=$rc) — update status UNKNOWN, not up-to-date"; exit 0' ERR
 
 GSTACK_DIR="${GSTACK_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
-STATE_DIR="${GSTACK_STATE_DIR:-$HOME/.gstack}"
+. "$(dirname "$0")/gstack-state-root.sh" 2>/dev/null || { echo "$0: cannot resolve the gstack state root: $(dirname "$0")/gstack-state-root.sh is missing. fix: reinstall with ./setup or /gstack-upgrade (docs/state-root.md)" >&2; exit 1; }
+gstack_state_root_select
+STATE_DIR="$_gstack_sr_root"
 
 # Egress receipt helpers (_receipted_curl / _receipted_git). Update checks
 # are fail-OPEN: a receipt hiccup warns but never blocks the version check.

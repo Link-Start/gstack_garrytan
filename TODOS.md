@@ -2,7 +2,7 @@
 
 ## NEXT PRIORITY
 
-### P1: paid-eval follow-ups from the v1.91.10.0 proof censuses (filed 2026-09-29)
+### P1: paid-eval follow-ups from the v1.91.12.0 proof censuses (filed 2026-09-29)
 
 - **Thin budgets on slow API days** — on Claude Code 2.1.284, review-army-perf
   (274 of 300 s) and the ship-docsync fault cases (250-263 of 285 s) sit at
@@ -175,7 +175,7 @@ wave"). Each was explicitly deferred with rationale, not dropped:
 - **#2443 AskUserQuestion numbering redesign** — real mismatch (brief letters
   vs host-rendered numbers), but a prompt-behavior redesign that shifts eval
   baselines; needs its own PR with baseline refresh. Effort S.
-- ~~**#2447 typecheck infra**~~ — superseded: the audit fix wave (v1.91.10.0)
+- ~~**#2447 typecheck infra**~~ — superseded: the audit fix wave (v1.91.12.0)
   added `tsconfig.json`, `bun run typecheck` (zero product errors) and the
   `typecheck:test` ratchet inside the required `free-tests` check, reusing
   #2447's fixes where they still applied.
@@ -673,41 +673,32 @@ identity-based answer.
 
 **Effort:** S. **Priority:** P3. **Depends on:** none.
 
-### P3: one state-root rule for the bridge's four stores
+### P3: next refactor wave (from the 2026-09 refactor wave survey)
 
-**What:** The hook, `bin/gstack-config` and `bin/gstack-memorable` resolve
-their root as `GSTACK_STATE_ROOT` > `GSTACK_HOME` > `GSTACK_STATE_DIR`; the
-egress ledger (`lib/egress-receipt.ts`) honors `GSTACK_HOME` >
-`GSTACK_STATE_DIR`; the trust-policy store (`lib/gbrain-repo-policy-client.ts`)
-only `GSTACK_HOME`; `bin/gstack-uninstall` deletes only
-`${GSTACK_STATE_DIR:-$HOME/.gstack}`. Extract one shared rule (a
-`lib/state-root.ts` plus its bash twin) and use it everywhere.
+**What:** Hotspots the 1.91.11.0 wave surveyed but did not refactor, plus
+bugs it found and left alone because fixing them changes behavior:
+- `bin/gstack-memory-ingest.ts` (2,674 lines; `ingestPass` is ~600 lines).
+- `scripts/resolvers/design.ts` `generateDesignMethodology` (503 lines).
+- `browse/src/browser-manager.ts` (2,143 lines) and `browse/src/cli.ts` (2,018 lines).
+- `lib/cso/*` dense one-line style.
+- Browse root-token denials disagree: some routes answer 401 `Unauthorized`,
+  others 403 `Root token required`. The route table's per-kind denial map
+  (`browse/src/routes/table.ts`) pins today's split.
+- The sidebar's inspector live updates never arrive: `/inspector/events` is
+  `root-bearer` (it sat behind the old blanket root check), but
+  `extension/sidepanel.js` opens it with a cookie-only EventSource, and it
+  listens for `inspectResult` while the server emits `state` / `inspector`.
+  Fix both together, then flip the cookie rows in
+  `browse/test/server-route-auth-blackbox.test.ts`.
+- Claude Code plugin-mode state (a pointer from `~/.gstack` to
+  `CLAUDE_PLUGIN_DATA`, plus merge, `--explain` and uninstall participation),
+  deferred by the W1 evidence gate: no official plugin distribution exists.
+- The CSO native launchers (`lib/cso/launcher*.c`) pass only `HOME`,
+  `GSTACK_HOME` and `CLAUDE_PLUGIN_*` to the core, so `/cso` ignores an
+  exported `GSTACK_STATE_ROOT` / `GSTACK_STATE_DIR`. Needs a native rebuild.
+- TODOS.md itself (4,500+ lines) needs restructuring.
 
-**Why:** With `GSTACK_STATE_ROOT` set, the gate lives under one directory and
-the receipts under another; the tests pin all three variables to one temp dir,
-so the drift is invisible to them. Found by the /ship red team.
-
-**Context:** Uninstall already flips `memorable_recall` off whenever it reads
-`on`, kept state or not (through gstack-config's own resolution), so no config
-can say `on` after the hook is gone; the remaining drift is observability, not
-consent.
-
-**Effort:** S (human ~3 h / CC+gstack ~20 min). **Priority:** P3.
-**Depends on:** none.
-
-### P3: shared hook logging helper
-
-**What:** `stateRoot()` and the `hook-errors.log` appender now exist in five
-hooks (`question-log`, `question-preference`, `auq-error-fallback`,
-`timeline-stop`, `memorable-user-prompt`), with drifting env-var precedence.
-Extract `hosts/claude/hooks/hook-log.ts` (root resolution, 0600 append, the
-rate limiter the memorable hook added) and migrate the five.
-
-**Why:** One place to fix precedence and file modes; the memorable hook's
-rate limiter belongs to every hook that can fail on every prompt.
-
-**Effort:** S (human ~2 h / CC+gstack ~15 min). **Priority:** P3.
-**Depends on:** the state-root rule above.
+**Effort:** M per item. **Priority:** P3.
 
 ## Aside integration follow-ups (filed via /plan-ceo-review + /plan-eng-review on the third-party-actions Aside plan)
 

@@ -61,7 +61,7 @@ export function createBoundaryFixture(id: BoundaryCase, root = fs.mkdtempSync(pa
   commands.set(blocks[1].replace('<detected-directory>', 'src'), 'acquire');
   commands.set('bash ./verify.sh', 'verify');
   const releaseTemplate = blocks[2];
-  for (const file of ['careful/bin/hook-extract.sh', 'freeze/bin/check-freeze.sh']) {
+  for (const file of ['bin/gstack-state-root.sh', 'careful/bin/hook-extract.sh', 'freeze/bin/check-freeze.sh']) {
     write(path.join(installed, file), read(path.join(ROOT, file)), true);
   }
   write(path.join(installed, 'freeze/bin/freeze-state-real.sh'), read(path.join(ROOT, 'freeze/bin/freeze-state.sh')), true);
