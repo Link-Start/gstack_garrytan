@@ -81,9 +81,24 @@ function preRunLogRecordValue(before: string, nextClause: string): boolean {
   // The immediately following assertion must keep the same record as its
   // subject and explicitly exclude this workflow as its origin. A later
   // current completion occurrence is still checked independently below.
+  return disownsRun(nextClause);
+}
+
+/** The next assertion keeps the record as its subject and excludes this run as its origin. */
+function disownsRun(nextClause: string): boolean {
   return /^(?:that|the|this)\s+(?:record|entry|line)\s+(?:was|is)\s+not\s+(?:produced|created|written|recorded)\s+(?:by|during|in)\s+(?:this|my)\s+(?:run|session|workflow)\b/i.test(nextClause.trim()) ||
     /^(?:that|the|this)\s+(?:record|entry|line)\s+predates\s+(?:this|my)\s+(?:run|session|workflow)\s+and\s+was\s+not\s+(?:produced|created|written|recorded)\s+by\s+it\b/i.test(nextClause.trim()) ||
     /^(?:that|the|this)\s+(?:record|entry|line)\s+(?:does not|doesn't|cannot)\s+(?:reflect|establish|provide|supply)\s+(?:current\s+)?outside\s+(?:review\s+)?coverage\s+(?:from|for)\s+(?:this|my)\s+(?:run|session|workflow)\b/i.test(nextClause.trim());
+}
+
+/** A record named by the retained prior record's own clock, then disowned, owns its reported value. */
+function priorClockRecordValue(before: string, nextClause: string, priorRecord?: Record<string, unknown>): boolean {
+  const at = /T(\d{2}):(\d{2}):(\d{2})/.exec(String(priorRecord?.timestamp ?? ''));
+  if (!at || priorRecord?.outside_status !== 'completed') return false;
+  const owner = new RegExp(String.raw`\b(?:earlier|prior|previous|old(?:er)?|historical|pre[- ]existing)\s+(?:review[- ]log\s+)?(?:record|entry|line)\s+(?:from|at|dated|timestamped)\s+${at[1]}:${at[2]}(?::${at[3]}(?:\.\d+)?)?(?![\d:])`, 'i').exec(before);
+  if (!owner) return false;
+  const value = before.slice(owner.index + owner[0].length);
+  return !/\b(?:this|my)\s+(?:run|session|workflow)\b|\b(?:now|currently|current|new|updat\w*|append\w*)\b/i.test(value) && disownsRun(nextClause);
 }
 
 /** Structured quotations must belong to the exact retained prior record. */
@@ -243,6 +258,7 @@ function hasUnattributedOutsideCompletion(output: string, priorRecord?: Record<s
     // subject is "that record" rather than "the earlier record".
     const datedBeforeRun = String.raw`\s+is\s+timestamped\s+(?:about\s+)?(?:a|an|one|two|\d+)\s+(?:minute|hour|day|week)s?\s+before\s+(?:this|my)\s+(?:run|session|workflow)`;
     const recordPattern = new RegExp(String.raw`\b(?:(?:earlier|prior|historical|old(?:er)?)\s+(?:entry|record|line)|(?:that|the)\s+(?:entry|record|line)(?=${datedBeforeRun}))\b`, 'gi');
+    if (priorClockRecordValue(before, clauses[clauseIndex + 1] ?? '', priorRecord)) return false;
     const record = [...before.matchAll(recordPattern)].at(-1);
     if (!record) return !preRunLogRecordValue(before, clauses[clauseIndex + 1] ?? '');
     // Bind this occurrence to an old record's reported value. A mere mention
