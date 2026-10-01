@@ -61,7 +61,7 @@ interface ModeCase {
 
 const CASES: ModeCase[] = [
   { mode: 'HOLD SCOPE',      postureRe: /\b(rigor|bulletproof|hold\s*scope|maximum\s+rigor)\b/i },
-  { mode: 'SCOPE EXPANSION', postureRe: /\b(expansion|10x|delight|dream|cathedral|opt[\s-]?in)\b/i },
+  { mode: 'SCOPE EXPANSION', postureRe: /\b(expansions?|10x|delight|dream|cathedral|opt[\s-]?in)\b/i },
 ];
 
 // Both cases review the same plan, available before the slash command starts.

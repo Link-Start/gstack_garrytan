@@ -2053,3 +2053,18 @@ describe('HOLD SCOPE defer/keep menu (census 36626737820: "Defer update to TODOS
     expect(holdDeferKeepIndex(undefined)).toBeNull();
   });
 });
+
+describe('SCOPE EXPANSION posture names plural expansions (run 36903600510)', () => {
+  const capture = JSON.parse(fs.readFileSync(path.join(import.meta.dir, 'fixtures/ceo-expansion-plural-36903600510.json'), 'utf8'));
+  const source = fs.readFileSync(path.join(import.meta.dir, 'skill-e2e-plan-ceo-mode-routing.test.ts'), 'utf8');
+  const literal = /mode: 'SCOPE EXPANSION',\s*postureRe: \/(.+)\/i \}/.exec(source)![1]!;
+  const routed = new RegExp(literal, 'i');
+  test('the routing regex credits "proposing expansions one at a time" after the mode answer', () => {
+    expect(hasNativePostAnswerCeoPosture(capture.native, 'SCOPE EXPANSION', routed, capture.selectionStartedAt, [])).toBe(true);
+  });
+  test('the same transcript without that sentence earns no credit', () => {
+    const native = structuredClone(capture.native);
+    native.assistantMessages = native.assistantMessages.filter((m: { text: string }) => !/proposing expansions/.test(m.text));
+    expect(hasNativePostAnswerCeoPosture(native, 'SCOPE EXPANSION', routed, capture.selectionStartedAt, [])).toBe(false);
+  });
+});
