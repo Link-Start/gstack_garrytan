@@ -163,7 +163,7 @@ function recordedBatchingIssue(call: NativePlanQuestionCall, savedPlan: string):
   const rawSourceNames = [...(lines[1] ?? '').matchAll(/\b[\w./-]+\.md\b/g)];
   const directSource = sourceNames.length > 0 && sourceNames.every(name => name === 'PLAN.md') &&
     new Set([...metadata.matchAll(/\bPLAN\.md:([1-9]\d*(?:[-–][1-9]\d*)?)\b/g)].map(match => match[1])).size <= 1;
-  const targetName = (s: string) => clean(s).replace(/^Eng(?:ineering)? review\s*[:—–-]\s*/i, '')
+  const targetName = (s: string) => clean(s).replace(/^Eng(?:ineering)? review(?: report)?\s*[:—–-]\s*/i, '')
     .replace(/^Plan\s*[:—–-]\s*/i, '').toLowerCase();
   const named = [...(lines[1] ?? '').matchAll(/"(Plan:\s*[^"\n]+)"|“(Plan:\s*[^”\n]+)”|\b[Pp]lan\s+"([^"\n]+)"|\b[Pp]lan\s+“([^”\n]+)”/g)]
     .map(match => targetName(match[1] ?? match[2] ?? match[3] ?? match[4]!));
@@ -186,7 +186,7 @@ function recordedBatchingIssue(call: NativePlanQuestionCall, savedPlan: string):
   const namedSource = !rawSourceNames.length && named.length <= 1 && titles.length >= 1 &&
     titles[0]!.type === 'heading' && currentHeading(tokens.indexOf(titles[0]!)) &&
     targetFiles.length === 1 && targetFiles[0]!.split('/').at(-1) === 'PLAN.md' &&
-    (named.length === 0 || /^Eng(?:ineering)? review\s*[:—–-]\s*\S/i.test(clean(titles[0]!.text)) &&
+    (named.length === 0 || /^Eng(?:ineering)? review(?: report)?\s*[:—–-]\s*\S/i.test(clean(titles[0]!.text)) &&
       titles.every(title => title.type === 'heading' && targetName(title.text) === named[0]));
   if (!directSource && !namedSource) return;
   const withdrawn = (value: string, owners: string) => new RegExp(
@@ -324,6 +324,8 @@ function recordedBatchingIssue(call: NativePlanQuestionCall, savedPlan: string):
       const explicitSelectors = nativeOptions.flatMap(option => option.selector ? [option.selector] : []);
       if (new Set(explicitSelectors).size !== explicitSelectors.length ||
           nativeOptions.some(option => option.selector && !selectors.includes(option.selector) || !option.label || /^[A-D][).:]\s+/.test(option.label))) continue;
+      // The preamble's `(recommended)` suffix marks the recommendation; it is not part of the choice.
+      const unmarked = (label: string) => clean(label).replace(/\s*\(recommended\)$/i, '');
       const readOptions = (lines: string[]) => {
         const records: Array<{ selector: string; label: string; description: string[] }> = [];
         for (const line of lines) {
@@ -335,7 +337,7 @@ function recordedBatchingIssue(call: NativePlanQuestionCall, savedPlan: string):
         if (records.length !== nativeOptions.length || new Set(records.map(record => record.selector)).size !== records.length ||
             records.some(record => !selectors.includes(record.selector))) return undefined;
         const matches = records.map(record => nativeOptions.flatMap((native, at) =>
-          (!native.selector || native.selector === record.selector) && clean(record.label) === native.label &&
+          (!native.selector || native.selector === record.selector) && unmarked(record.label) === unmarked(native.label) &&
             clean(record.description.join('\n')) === clean(native.description) ? [at] : []));
         return matches.every(match => match.length === 1) && new Set(matches.flat()).size === records.length ? records : undefined;
       };

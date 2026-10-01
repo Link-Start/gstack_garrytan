@@ -192,3 +192,36 @@ describe('batching replay of a 2.1.284 rerun (bullet target, unnamed plan)', () 
     expect(count(plan)).toEqual([]);
   });
 });
+
+describe('saved ledger from run 36798539821: report title and (recommended) marker', () => {
+  const reportTitleCapture: { calls: NativePlanQuestionCall[]; plans: string[] } = JSON.parse(
+    fs.readFileSync(path.join(import.meta.dir, 'fixtures/eng-batching-report-title-36798539821.json'), 'utf8'));
+  const [d1, d3] = reportTitleCapture.calls;
+  const [d1Plan, d3Plan] = reportTitleCapture.plans;
+  const countReportTitle = (call: NativePlanQuestionCall, plan: string, prior: NativePlanQuestionCall[] = []) =>
+    createEngBatchingIssueCounter(() => plan, engSetupAUQ).isReviewAUQ(nativePlanCallFingerprint(structuredClone(call), 0, true), prior);
+
+  test('a saved option label without the native (recommended) marker still owns the decision', () => {
+    expect(d1!.questions[0]!.options[0]!.label).toBe('Library hooks + custom backoff (recommended)');
+    expect(d1Plan).toContain('\nA) Library hooks + custom backoff\n');
+    expect(countReportTitle(d1!, d1Plan!)).toBe(true);
+  });
+
+  test('an unsourced brief inherits PLAN.md from an "Eng Review Report — <plan>" title', () => {
+    expect(d3Plan!.split('\n')[0]).toBe('# Eng Review Report — Add background job retry framework');
+    expect(d3!.questions[0]!.question.split('\n')[1]).not.toMatch(/\.md\b/);
+    expect(countReportTitle(d3!, d3Plan!, [d1!])).toBe(true);
+  });
+
+  test('rejects a saved label that changes the choice, not just the marker', () => {
+    expect(countReportTitle(d1!, d1Plan!.replace('\nA) Library hooks + custom backoff\n', '\nA) Library hooks without custom backoff\n'))).toBe(false);
+  });
+
+  test('rejects a report title that names a different plan', () => {
+    expect(countReportTitle(d3!, d3Plan!.replace('# Eng Review Report — Add background job retry framework', '# Eng Review Report — Rewrite the billing service'), [d1!])).toBe(false);
+  });
+
+  test('rejects a report title with an unrelated prefix', () => {
+    expect(countReportTitle(d3!, d3Plan!.replace('# Eng Review Report — ', '# Copied Review Notes — '), [d1!])).toBe(false);
+  });
+});
