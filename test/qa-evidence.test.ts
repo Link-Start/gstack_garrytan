@@ -432,6 +432,22 @@ test('a superseded row closes only when the same native probe was rerun on the c
   expect(materialize(row('001', 'superseded'), row('002', 'pass'), row('003', 'pass'))).toEqual({ status: 'pass', open: [] });
 });
 
+test('a descriptive classification is rejected before publication, so the corrected label can still materialize', () => {
+  // gate-census-6 of run 36920606897: "pass (current snapshot)" left the one-shot verdict inconclusive.
+  const f = fixture();
+  expect(f.capture('001', 'console.log(JSON.stringify({ step: 1 }))').status).toBe(0);
+  const row = (classification: string) => ({ capture: '001', command: 'capture 001', contract: 'README.md', expected: 'declared', classification });
+  f.json('annotations.json', { revision: 'fixture-revision', limits: ['One probe ran.'], evidence: [row('pass (current snapshot)')] });
+  const rejected = f.run('materialize', f.root, 'annotations.json');
+  expect(rejected.status).toBe(2);
+  expect(receipt(rejected.stderr).message).toContain('classification must be one of pass, superseded');
+  expect(fs.existsSync(path.join(f.root, 'evidence.json'))).toBe(false);
+  f.json('annotations.json', { revision: 'fixture-revision', limits: ['One probe ran.'], evidence: [row('pass')] });
+  const accepted = f.run('materialize', f.root, 'annotations.json');
+  expect(accepted.status, accepted.stderr).toBe(0);
+  expect(receipt(accepted.stdout).verdict).toEqual({ status: 'pass', open: [] });
+});
+
 test('captures list declared-but-unrun required probes without judging them', () => {
   const f = fixture();
   const required = [`${process.execPath} -e console.log(JSON.stringify({step:1}))`, 'bun run probe -- reject'];

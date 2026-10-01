@@ -258,6 +258,9 @@ function checkpoint(root: string, checkpointId: string, source: string | Record<
     link: `[checkpoint ${checkpointId}](exploration-${checkpointId}.json)`, exitCode: 0 };
 }
 
+/** Labels the verdict reads; an unrecognized label is rejected before publication so it can be corrected. */
+const QA_CLASSIFICATIONS = ['pass', 'superseded', 'product-defect', 'fail', 'setup-blocked', 'blocked', 'inconclusive'];
+
 function materialize(root: string, source: string) {
   const bytes = read(root, source);
   if (scan(decode(bytes)).findings.some(finding => finding.tier === 'HIGH')) throw new QaEvidenceError('Sensitive annotations cannot be published');
@@ -289,6 +292,7 @@ function materialize(root: string, source: string) {
   const evidence = annotations.evidence.map((row: any) => {
     if (!exact(row, ['capture', 'command', 'contract', 'expected', 'classification'])
       || !Object.values(row).every(value => typeof value === 'string' && value.trim()) || captures.has(row.capture)) throw new QaEvidenceError('Invalid evidence annotation: each row needs exactly capture, command, contract, expected and classification as non-empty strings, with a unique capture');
+    if (!QA_CLASSIFICATIONS.includes(row.classification)) throw new QaEvidenceError(`Invalid evidence annotation: capture ${row.capture} classification must be one of ${QA_CLASSIFICATIONS.join(', ')}; put the reason in limits or Markdown, not the label`);
     captures.add(row.capture);
     const captured = readQaCapture(root, row.capture);
     argv.push(JSON.stringify(captured.receipt.argv));
@@ -337,7 +341,7 @@ function materialize(root: string, source: string) {
     next: `Include every reportLinks entry in the Markdown report, and report the overall status as ${verdict.status}${verdict.open.length ? ` (open: ${verdict.open.join('; ')})` : ''}; rerun what is open first if a pass is required.` };
 }
 
-const QA_EVIDENCE_USAGE = 'capture ROOT ID [--public] --deadline FILE|--timeout-ms MS [--after PREVIOUS_CAPTURE --hypothesis TEXT] -- COMMAND ARGS (--after publishes checkpoint ID linking PREVIOUS_CAPTURE to this probe; required after the first complete capture unless a checkpoint was published) | checkpoint ROOT ID CAPTURE OBSERVATION_COMMAND HYPOTHESIS NEXT_COMMAND | checkpoint ROOT ID INTENT_FILE | materialize ROOT ANNOTATIONS (annotations: {evidence: [{capture, command, contract, expected, classification}], limits: [..]}; revision, runtime, cwd and learning are filled in)';
+const QA_EVIDENCE_USAGE = 'capture ROOT ID [--public] --deadline FILE|--timeout-ms MS [--after PREVIOUS_CAPTURE --hypothesis TEXT] -- COMMAND ARGS (--after publishes checkpoint ID linking PREVIOUS_CAPTURE to this probe; required after the first complete capture unless a checkpoint was published) | checkpoint ROOT ID CAPTURE OBSERVATION_COMMAND HYPOTHESIS NEXT_COMMAND | checkpoint ROOT ID INTENT_FILE | materialize ROOT ANNOTATIONS (annotations: {evidence: [{capture, command, contract, expected, classification: pass|superseded|product-defect|fail|setup-blocked|blocked|inconclusive}], limits: [..]}; revision, runtime, cwd and learning are filled in)';
 
 export async function qaEvidenceMain(args: string[]): Promise<number> {
   return withQaReceiptOutput(false, 'qa-evidence-receipt', value => value.event === 'observation'
