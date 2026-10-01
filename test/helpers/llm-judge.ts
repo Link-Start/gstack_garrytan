@@ -259,6 +259,35 @@ export function judgePanelReasoning(samples: ReadonlyArray<unknown>): string {
   }).join('\n');
 }
 
+const score = { type: 'integer', enum: [1, 2, 3, 4, 5] } as const;
+// Structured output guarantees parseable JSON; free-form judges failed on
+// unescaped quotes inside their reasoning (run 36798539821, setup block).
+export const JUDGE_SCORE_SCHEMA = {
+  type: 'object',
+  properties: { clarity: score, completeness: score, actionability: score, reasoning: { type: 'string' } },
+  required: ['clarity', 'completeness', 'actionability', 'reasoning'],
+  additionalProperties: false,
+};
+export const OUTCOME_JUDGE_SCHEMA = {
+  type: 'object',
+  properties: {
+    detected: { type: 'array', items: { type: 'string' } },
+    missed: { type: 'array', items: { type: 'string' } },
+    false_positives: { type: 'integer' },
+    detection_rate: { type: 'integer' },
+    evidence_quality: score,
+    reasoning: { type: 'string' },
+  },
+  required: ['detected', 'missed', 'false_positives', 'detection_rate', 'evidence_quality', 'reasoning'],
+  additionalProperties: false,
+};
+export const POSTURE_SCORE_SCHEMA = {
+  type: 'object',
+  properties: { axis_a: score, axis_b: score, reasoning: { type: 'string' } },
+  required: ['axis_a', 'axis_b', 'reasoning'],
+  additionalProperties: false,
+};
+
 /**
  * Score documentation quality on clarity/completeness/actionability (1-5).
  */
@@ -289,7 +318,7 @@ Respond with ONLY valid JSON in this exact format:
 
 Here is the ${section} to evaluate:
 
-${content}`);
+${content}`, undefined, { jsonSchema: JUDGE_SCORE_SCHEMA });
 }
 
 /**
@@ -329,7 +358,7 @@ Rules:
 - "detected" and "missed" arrays must only contain IDs from the ground truth: ${groundTruth.bugs.map((b: any) => b.id).join(', ')}
 - detection_rate = length of detected array
 - evidence_quality (1-5): Do detected bugs have screenshots, repro steps, or specific element references?
-  5 = excellent evidence for every bug, 1 = no evidence at all`);
+  5 = excellent evidence for every bug, 1 = no evidence at all`, undefined, { jsonSchema: OUTCOME_JUDGE_SCHEMA });
 }
 
 /**
@@ -383,7 +412,7 @@ Respond with ONLY valid JSON in this exact format:
 
 Here is the output to evaluate:
 
-${text}`, undefined, { signal });
+${text}`, undefined, { signal, jsonSchema: POSTURE_SCORE_SCHEMA });
 }
 
 /**
