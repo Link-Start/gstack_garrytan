@@ -89,7 +89,7 @@ async function exercise(mode: 'success' | 'max-turns' | 'first-timeout' | 'secon
       expect(opts.signal.aborted).toBe(false);
       // Bind the complete actual compact-delivery prompt, not selected snippets.
       expect(new Bun.CryptoHasher('sha256').update(opts.prompt).digest('hex'))
-        .toBe('56468e8f520719957c612ced2da1f5f2f3698bc4551075a429bee4816e157cdb');
+        .toBe('021c9f2b0522fc55bc265a976356678a048f3c17d27b63669674c805a485b28e');
       expect(opts.testName).toBe(id); expect(opts.maxTurns).toBe(15); expect(opts.timeout).toBe(CAPTURE_MS);
       for (const key of ['model', 'tools', 'allowedTools', 'appendSystemPrompt', 'env']) expect(opts).not.toHaveProperty(key);
       expect(opts.prompt).toContain('Review the plan in ./plan.md');
@@ -103,7 +103,7 @@ async function exercise(mode: 'success' | 'max-turns' | 'first-timeout' | 'secon
       expect(opts.prompt).toContain('Then return a brief, concrete summary');
       expect(opts.prompt).toContain('natively Read plan-design-review/SKILL.md');
       expect(opts.prompt).toContain('plan-design-review/sections/review-sections.md (the one lazy section this review requires)');
-      expect(opts.prompt).toContain('including the report, under 14,000 characters');
+      expect(opts.prompt).toContain('including the report, to about 10,000 characters; this is a drafting target, not a check, so do not count characters or trim after saving');
       expect(opts.prompt).toContain('in at most ten lines');
       expect(opts.prompt).toContain('execute every required pass and lazy-section Read');
       expect(opts.prompt).toContain('Retain all required report fields, design decisions, diagrams, ratings, and explanations');
