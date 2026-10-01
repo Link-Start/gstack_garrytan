@@ -91,6 +91,8 @@ export function validateQACheckpoints(input: {
   files: Record<string, string>;
   reportMarkdown: string;
   producer?: QaEvidenceContext;
+  /** Caller-authorized Bash that names checkpoints only as evidence citations, never as files to read or write. */
+  citesCheckpointsOnly?: (command: string) => boolean;
 }): string[] {
   const failures: string[] = [];
   let disk: Record<string, string>;
@@ -181,7 +183,8 @@ export function validateQACheckpoints(input: {
       attempted = path.join(input.reportRoot, name);
       content = disk[name];
     }
-    if (call.name === 'Bash' && producerCommand?.action !== 'checkpoint' && typeof call.input.command === 'string' && /exploration-\d+\.json/.test(call.input.command)) {
+    if (call.name === 'Bash' && producerCommand?.action !== 'checkpoint' && typeof call.input.command === 'string' && /exploration-\d+\.json/.test(call.input.command)
+      && !input.citesCheckpointsOnly?.(call.input.command)) {
       failures.push('Unsupported checkpoint Bash interaction');
     }
     if (typeof attempted !== 'string' || !path.basename(attempted).startsWith('exploration-')) continue;

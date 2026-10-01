@@ -130,6 +130,11 @@ describe('caller native-event observer controls', () => {
     expect(errorsFor(record('blocked'))).toEqual(['review record status outside the review vocabulary: blocked']);
     expect(errorsFor(record('issues_found'))).toEqual([]);
     expect(errorsFor(record('unavailable'))).toEqual(['review record status outside the review vocabulary: unavailable']);
+    // ci-36907899270-1-eval-slices-6: an accepted record whose finding cites checkpoints as evidence.
+    const cited = record('issues_found').replace('"action":"ask-pending"}', '"action":"ask-pending","evidence":["reports/exploration-002.json","reports/exploration-003.json"]}');
+    expect(cited).not.toBe(record('issues_found'));
+    expect(errorsFor(cited)).toEqual([]);
+    expect(errorsFor(`bun ${cited}`)).toEqual(['command outside declared caller observation interface', 'QA checkpoint: Unsupported checkpoint Bash interaction']);
     expect(errorsFor(record('unavailable'), 'ship').filter(error => error.includes('vocabulary'))).toEqual([]);
     expect(errorsFor(generatedReviewRecord('/runtime/bin/gstack-review-log', 'native-token').replace('"status":"clean"', '"status":"blocked"'))).toEqual([]);
     const prompt = (id: 'review-exploratory-small-cli' | 'ship-exploratory-small-cli') => {

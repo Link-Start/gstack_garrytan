@@ -416,6 +416,9 @@ export function validateCallerEvidence(input: {
     probes: checkpointProbes, requiredProbes: checkpointProbes.slice(1),
     additionalTargets: expiredTargets,
     files: input.checkpointFiles, reportMarkdown: input.reportMarkdown,
+    // An installed review-log record cites checkpoints in its findings' evidence.
+    citesCheckpointsOnly: command => /^\S*\/gstack-review-log '/.test(command.trim())
+      && qaCallerCommandAllowed(command, input.workflowCommands, deadline),
   }));
   const selected = input.receipt.probes.map(id => input.probes.find(probe => probe.id === id));
   if (selected.some(probe => !probe)) errors.push('receipt references an unobserved probe');
