@@ -695,7 +695,7 @@ _aside_exec "Search the web for {framework} {version} {pattern} current best pra
 ```
 
 Without Aside `READY`, use WebSearch if available; with neither, disclose the gap
-and use existing knowledge. Don't wait on research: run it alongside independent work, such as specialist dispatch.
+and use existing knowledge. Research runs alongside specialist dispatch.
 
 ### Shared-code opportunities (core pass)
 
@@ -826,8 +826,7 @@ Never install, import cookies or bootstrap tests. Functional-only skips browser 
 
 **3. Run smoke and plan checks.**
 Follow the shared Probe loop for smoke checks and replays until the smoke limit.
-Then run required plan checks and revalidation, even after smoke expires, using the same procedure but no smoke guard; never reset the clock.
-Plan checks and their revalidation publish a checkpoint beside D before each probe but skip the `G status D` expiry stop and use `--timeout-ms`, not `--deadline D`. A smoke recheck after expiry is not-run.
+Then run required plan checks and revalidation, even after smoke expires, using the same procedure but no smoke guard; never reset the clock. Their checkpoints sit beside D; they skip `G status D` and use `--timeout-ms`, not `--deadline D`. Post-expiry smoke rechecks are not-run.
 Use finite command timeouts, capped at the caller's remaining time if it has a deadline. /review sets none; only an invoker-supplied EARLIER_UTC counts.
 Await clock/guard results before acting. When the caller's deadline expires, mark unfinished checks not-run.
 
@@ -846,7 +845,7 @@ Return verified defects to Fix-First: `path`, `line`, `category`,
 `fingerprint: path:line:category`, replay, `test_stub`. Use checklist severity;
 unmatched functional failures are `functional-contract`, `CRITICAL`.
 Setup/permission blockers are not defects. Test creation needs user approval.
-Ask only for a named permission or setup the user performs, never secrets. Report-only /review never runs setup, installs or cookie import, even after approval.
+Ask only for permission or user-performed setup, never secrets; report-only /review never runs setup, installs or cookie import.
 After a grant, recheck readiness and run affected checks; otherwise they stay blocked. Unresolved coverage makes Step 5.8 incomplete; a ship waiver cannot complete it.
 
 **5. Prepare one provisional QA section.**
@@ -1070,9 +1069,8 @@ for the native result, or vice versa. Step 4.8's structured-review gate still ap
 
 - Use Step 4.6's `specialists` object unchanged, including its empty small-diff map.
   If this host omits Review Army, use `specialists: {}` without claiming specialist coverage.
-- Build `findings` from the final-pass findings Step 5 combined (core, specialist,
-  Step 4.8 adversarial, VALID & ACTIONABLE Greptile and verified exploratory QA
-  findings) and invocation actions. Retain `fingerprint`, `severity`
+- Build `findings` from Step 5's combined final-pass findings (core, specialist,
+  adversarial, actionable Greptile, verified exploratory QA findings) and invocation actions. Retain `fingerprint`, `severity`
   (`CRITICAL|INFORMATIONAL`), `action`, and any `advisory`, `evidence_paths`,
   `helper_target`. Recheck source after fixes. The logger uses `sharedLibsFingerprint`,
   never supplied/model hashes.

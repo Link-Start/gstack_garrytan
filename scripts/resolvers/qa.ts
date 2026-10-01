@@ -255,8 +255,7 @@ Never install, import cookies or bootstrap tests. Functional-only skips browser 
 
 **3. Run smoke and plan checks.**
 Follow the shared Probe loop for smoke checks and replays until the smoke limit.
-Then run required plan checks and revalidation, even after smoke expires, using the same procedure but no smoke guard; never reset the clock.
-Plan checks and their revalidation publish a checkpoint beside D before each probe but skip the \`G status D\` expiry stop and use \`--timeout-ms\`, not \`--deadline D\`. A smoke recheck after expiry is not-run.
+Then run required plan checks and revalidation, even after smoke expires, using the same procedure but no smoke guard; never reset the clock. Their checkpoints sit beside D; they skip \`G status D\` and use \`--timeout-ms\`, not \`--deadline D\`. Post-expiry smoke rechecks are not-run.
 Use finite command timeouts, capped at the caller's remaining time if it has a deadline.${ship ? '' : ' /review sets none; only an invoker-supplied EARLIER_UTC counts.'}
 Await clock/guard results before acting. When the caller's deadline expires, mark unfinished checks not-run.
 
@@ -275,7 +274,7 @@ Return verified defects to Fix-First: \`path\`, \`line\`, \`category\`,
 \`fingerprint: path:line:category\`, replay, \`test_stub\`. Use checklist severity;
 unmatched functional failures are \`functional-contract\`, \`CRITICAL\`.
 Setup/permission blockers are not defects. Test creation needs user approval.
-${ship ? 'Step 9.4 asks: permission/repair or explicit named-risk acceptance; otherwise blocked.' : `Ask only for a named permission or setup the user performs, never secrets. Report-only /review never runs setup, installs or cookie import, even after approval.
+${ship ? 'Step 9.4 asks: permission/repair or explicit named-risk acceptance; otherwise blocked.' : `Ask only for permission or user-performed setup, never secrets; report-only /review never runs setup, installs or cookie import.
 After a grant, recheck readiness and run affected checks; otherwise they stay blocked. Unresolved coverage makes Step 5.8 incomplete; a ship waiver cannot complete it.`}
 
 ${ship ? `Read QA's \`templates/functional-report-template.md\`: PR section \`## Exploratory QA\`,

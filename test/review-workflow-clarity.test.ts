@@ -572,7 +572,7 @@ test('review resolves the judged smoke-clock, setup-authority, plan-gate and fin
   expect(qa).toContain('Follow the shared Probe loop for smoke checks and replays until the smoke limit');
   expect(qa).toContain('Then run required plan checks and revalidation, even after smoke expires, using the same procedure but no smoke guard');
   expect(qa).toContain('/review sets none; only an invoker-supplied EARLIER_UTC counts');
-  expect(qa).toContain('Report-only /review never runs setup, installs or cookie import, even after approval');
+  expect(qa).toContain('report-only /review never runs setup, installs or cookie import');
   expect(qa).toContain('After a grant, recheck readiness and run affected checks; otherwise they stay blocked');
   expect(qa).not.toContain('Ask for setup/permission');
   expect(generateQAReview({ ...ctx, skillName: 'ship', tmplPath: 'ship/SKILL.md.tmpl' })).not.toContain('/review sets none');
@@ -585,5 +585,5 @@ test('review resolves the judged smoke-clock, setup-authority, plan-gate and fin
   expect(audit).toContain('Discrepancies derived only from fallback sources (commit messages, TODOS.md, PR description) never trigger this question');
   expect(generatePlanCompletionAuditShip({ ...ctx, skillName: 'ship', tmplPath: 'ship/SKILL.md.tmpl' })).toContain('skip with "No plan file detected — skipping."');
   const persist = skill.slice(skill.indexOf('### 2. Fill the record')).replace(/\s+/g, ' ');
-  expect(persist).toContain('findings Step 5 combined (core, specialist, Step 4.8 adversarial, VALID & ACTIONABLE Greptile and verified exploratory QA findings)');
+  expect(persist).toContain("Step 5's combined final-pass findings (core, specialist, adversarial, actionable Greptile, verified exploratory QA findings)");
 });

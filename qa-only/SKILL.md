@@ -420,7 +420,7 @@ Read sections in full when directed; do not work from memory.
 
 | When | Read this section |
 |------|-------------------|
-| selecting surfaces and later running the selected report-only probes without product or test writes (one Read covers both) | `sections/exploratory.md` relative to the installed `qa-only`/`gstack-qa-only` SKILL.md directory |
+| selecting surfaces, then running report-only probes (one Read covers both) | `sections/exploratory.md` relative to the installed `qa-only`/`gstack-qa-only` SKILL.md directory |
 | finalizing the report after probing stops | `sections/reporting.md` relative to the installed `qa-only`/`gstack-qa-only` SKILL.md directory |
 
 Start at Request Parameters, then follow the sections below in order.
@@ -470,7 +470,7 @@ Load the shared preparation gate now (the exploratory STOP just below): complete
 await their results, and select the surfaces. Defer charters, clocks and probes to
 Run the Selected Checks, after report ownership and conditional browser setup below.
 
-> **STOP.** Before selecting surfaces and later running the selected report-only probes without product or test writes (one Read covers both), Read `sections/exploratory.md` relative to the installed `qa-only`/`gstack-qa-only` SKILL.md directory in full and follow it.
+> **STOP.** Before selecting surfaces, then running report-only probes (one Read covers both), Read `sections/exploratory.md` relative to the installed `qa-only`/`gstack-qa-only` SKILL.md directory in full and follow it.
 > Use this host's installed path, never the product working directory or another host's assets.
 > If missing or unreadable, report a QA setup blocker and its affected probes as blocked; continue other safe probes (independent functional/static checks). Missing/unreadable assets block required QA.
 
@@ -480,7 +480,7 @@ For mixed Regression, the argument is the prior combined report. Resolve its fun
 replay evidence and browser baseline links first, then give each method its own baseline.
 A missing baseline blocks that surface's regression coverage, not independent checks.
 In mixed runs, use the user's surface order, defaulting to functional then browser.
-Each surface keeps its own clock in its own directory. Finish one surface's probes before starting the next surface's clock; any supplied
+Finish one surface's probes before starting the next surface's clock; any supplied
 absolute deadline still applies to both. Do not reset a clock when switching surfaces.
 
 ## Prepare Report Artifacts
@@ -534,7 +534,7 @@ During browser discovery, observe behavior without reading source to diagnose it
 
 ### Assemble the report
 
-After probing stops, load the finalization procedure below. Order: exploratory §4 annotations and materialize (browser-only runs pass an empty evidence list), then this procedure, then the final report Write. Use retained evidence;
+After probing stops, load the finalization procedure below. Order: exploratory §4 annotations and materialize, then this procedure, then the final report Write. Use retained evidence;
 this step does not authorize more probes or restart an expired clock.
 Do not preload reporting. To recover from an accidental early Read:
 If already read, issue another Read now and await its

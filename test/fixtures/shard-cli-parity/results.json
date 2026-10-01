@@ -1,5 +1,5 @@
 {
-  "recordedFrom": "96764e80 (pre-engine base runners)",
+  "recordedFrom": "96764e80 (pre-engine base runners); paid lane re-recorded at v1.91.12.0 for the marathon tier and the --slice-budget, --max-parallel, --case and --trials flags (PR 2999)",
   "free": [
     {
       "argv": [],
@@ -400,10 +400,15 @@
           "maxFilesPerShard": 1,
           "emitPlanPath": null,
           "slices": 1,
+          "sliceBudgetMs": null,
+          "jobsExplicit": false,
           "planPath": null,
           "sliceIndex": null,
           "reportDir": null,
-          "writeDurations": false
+          "writeDurations": false,
+          "maxParallel": null,
+          "caseId": null,
+          "trials": null
         }
       }
     },
@@ -429,10 +434,15 @@
           "maxFilesPerShard": 1,
           "emitPlanPath": null,
           "slices": 1,
+          "sliceBudgetMs": null,
+          "jobsExplicit": false,
           "planPath": null,
           "sliceIndex": null,
           "reportDir": null,
-          "writeDurations": false
+          "writeDurations": false,
+          "maxParallel": null,
+          "caseId": null,
+          "trials": null
         }
       }
     },
@@ -458,10 +468,15 @@
           "maxFilesPerShard": 1,
           "emitPlanPath": null,
           "slices": 1,
+          "sliceBudgetMs": null,
+          "jobsExplicit": false,
           "planPath": null,
           "sliceIndex": null,
           "reportDir": null,
-          "writeDurations": false
+          "writeDurations": false,
+          "maxParallel": null,
+          "caseId": null,
+          "trials": null
         }
       }
     },
@@ -488,10 +503,15 @@
           "maxFilesPerShard": 3,
           "emitPlanPath": null,
           "slices": 1,
+          "sliceBudgetMs": null,
+          "jobsExplicit": true,
           "planPath": null,
           "sliceIndex": null,
           "reportDir": null,
-          "writeDurations": false
+          "writeDurations": false,
+          "maxParallel": null,
+          "caseId": null,
+          "trials": null
         }
       }
     },
@@ -517,10 +537,15 @@
           "maxFilesPerShard": 1,
           "emitPlanPath": "manifest.json",
           "slices": 4,
+          "sliceBudgetMs": null,
+          "jobsExplicit": false,
           "planPath": null,
           "sliceIndex": null,
           "reportDir": null,
-          "writeDurations": false
+          "writeDurations": false,
+          "maxParallel": null,
+          "caseId": null,
+          "trials": null
         }
       }
     },
@@ -545,10 +570,15 @@
           "maxFilesPerShard": 1,
           "emitPlanPath": null,
           "slices": 1,
+          "sliceBudgetMs": null,
+          "jobsExplicit": false,
           "planPath": "manifest.json",
           "sliceIndex": 2,
           "reportDir": null,
-          "writeDurations": false
+          "writeDurations": false,
+          "maxParallel": null,
+          "caseId": null,
+          "trials": null
         }
       }
     },
@@ -572,10 +602,15 @@
           "maxFilesPerShard": 1,
           "emitPlanPath": null,
           "slices": 1,
+          "sliceBudgetMs": null,
+          "jobsExplicit": false,
           "planPath": null,
           "sliceIndex": null,
           "reportDir": "reports",
-          "writeDurations": true
+          "writeDurations": true,
+          "maxParallel": null,
+          "caseId": null,
+          "trials": null
         }
       }
     },
@@ -602,10 +637,15 @@
           "maxFilesPerShard": 1,
           "emitPlanPath": null,
           "slices": 1,
+          "sliceBudgetMs": null,
+          "jobsExplicit": true,
           "planPath": null,
           "sliceIndex": null,
           "reportDir": null,
-          "writeDurations": false
+          "writeDurations": false,
+          "maxParallel": null,
+          "caseId": null,
+          "trials": null
         }
       }
     },
@@ -632,7 +672,7 @@
         "e2e"
       ],
       "result": {
-        "error": "--tier must be gate or periodic. Received: e2e"
+        "error": "--tier must be gate, periodic or marathon. Received: e2e"
       }
     },
     {
@@ -640,7 +680,7 @@
         "--tier"
       ],
       "result": {
-        "error": "--tier must be gate or periodic. Received: undefined"
+        "error": "--tier must be gate, periodic or marathon. Received: -"
       }
     },
     {
@@ -745,7 +785,7 @@
         "EVALS_TIER": "e2e"
       },
       "result": {
-        "error": "EVALS_TIER must be gate or periodic. Received: e2e"
+        "error": "EVALS_TIER must be gate, periodic or marathon. Received: e2e"
       }
     }
   ],

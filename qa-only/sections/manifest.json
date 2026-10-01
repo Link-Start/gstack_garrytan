@@ -7,7 +7,7 @@
       "id": "exploratory",
       "file": "exploratory.md",
       "title": "Report-only exploratory QA",
-      "trigger": "selecting surfaces and later running the selected report-only probes without product or test writes (one Read covers both)"
+      "trigger": "selecting surfaces, then running report-only probes (one Read covers both)"
     },
     {
       "id": "reporting",

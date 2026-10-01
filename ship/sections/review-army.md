@@ -501,8 +501,7 @@ Run the shared preflight; start its smoke guard once. Guard every smoke probe. F
 
 **3. Run smoke and plan checks.**
 Follow the shared Probe loop for smoke checks and replays until the smoke limit.
-Then run required plan checks and revalidation, even after smoke expires, using the same procedure but no smoke guard; never reset the clock.
-Plan checks and their revalidation publish a checkpoint beside D before each probe but skip the `G status D` expiry stop and use `--timeout-ms`, not `--deadline D`. A smoke recheck after expiry is not-run.
+Then run required plan checks and revalidation, even after smoke expires, using the same procedure but no smoke guard; never reset the clock. Their checkpoints sit beside D; they skip `G status D` and use `--timeout-ms`, not `--deadline D`. Post-expiry smoke rechecks are not-run.
 Use finite command timeouts, capped at the caller's remaining time if it has a deadline.
 Await clock/guard results before acting. When the caller's deadline expires, mark unfinished checks not-run.
 
