@@ -37,7 +37,7 @@ Run `bun run typecheck` and `bun run typecheck:test` before you push; both are f
 #### Fixed
 - `$B connect --supervise` respawned with a block-scoped env that no longer existed, so every restart threw and the supervisor gave up after five tries. The headed env is one helper used by connect and respawn, and the loop has behavioral tests.
 - Compiled `/cso` installs called an unimported `join` when launching the assertion-witness child, breaking runtime-tested witnessing for every installed user.
-- Browser-only `/qa` runs were told to materialize an evidence file that only accepts functional captures; they now skip that step and link their checkpoints. The fix loop had spent its last minute on it and timed out.
+- Browser-only `/qa` runs had no stated way to build the evidence file, whose rows only accept functional captures; the shared rule now says to materialize an empty evidence list with the checkpoints named in limits, matching `/qa-only`. The fix loop had spent its last minute on it and timed out.
 - `/office-hours` asks its goal question unless the user already chose a mode, then reads that mode's section before its first question; skipping both produced forcing questions with an empty recommendation. `/design-consultation` asks the memorable-thing question on its own after Q1 instead of packing it into Q1's call.
 - Free-form eval judges (docs, outcome, posture) could return JSON broken by an unescaped quote in their reasoning; they now use structured output.
 - `/qa` checkpoint receipts now print the report link for their `exploration-NNN.json` file; reports had been linking `.qa-evidence/NNN` capture folders as checkpoints instead.
